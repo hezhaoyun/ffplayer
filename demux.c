@@ -3,11 +3,11 @@
 
 static int decode_interrupt_cb(void *ctx)
 {
-    player_stat_t *is = ctx;
+    PlayerState *is = ctx;
     return is->abort_request;
 }
 
-static int demux_init(player_stat_t *is)
+static int demux_init(PlayerState *is)
 {
     AVFormatContext *p_fmt_ctx = NULL;
     int err, i, ret;
@@ -94,7 +94,7 @@ int demux_deinit()
     return 0;
 }
 
-static int stream_has_enough_packets(AVStream *st, int stream_id, packet_queue_t *queue)
+static int stream_has_enough_packets(AVStream *st, int stream_id, PacketQueue *queue)
 {
     return stream_id < 0 ||
            queue->abort_request ||
@@ -105,7 +105,7 @@ static int stream_has_enough_packets(AVStream *st, int stream_id, packet_queue_t
 /* this thread gets the stream from the disk or the network */
 static int demux_thread(void *arg)
 {
-    player_stat_t *is = (player_stat_t *)arg;
+    PlayerState *is = (PlayerState *)arg;
     AVFormatContext *p_fmt_ctx = is->p_fmt_ctx;
     int ret;
     AVPacket pkt1, *pkt = &pkt1;
@@ -187,7 +187,7 @@ static int demux_thread(void *arg)
     return 0;
 }
 
-int open_demux(player_stat_t *is)
+int open_demux(PlayerState *is)
 {
     if (demux_init(is) != 0)
     {

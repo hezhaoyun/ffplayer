@@ -3,18 +3,18 @@
 
 #include "player.h"
 
-void frame_queue_unref_item(frame_t *vp);
-int frame_queue_init(frame_queue_t *f, packet_queue_t *pktq, int max_size, int keep_last);
-void frame_queue_destory(frame_queue_t *f);
-void frame_queue_signal(frame_queue_t *f);
-frame_t *frame_queue_peek(frame_queue_t *f);
-frame_t *frame_queue_peek_next(frame_queue_t *f);
-frame_t *frame_queue_peek_last(frame_queue_t *f);
-frame_t *frame_queue_peek_writable(frame_queue_t *f);
-frame_t *frame_queue_peek_readable(frame_queue_t *f);
-void frame_queue_push(frame_queue_t *f);
-void frame_queue_next(frame_queue_t *f);
-int frame_queue_nb_remaining(frame_queue_t *f);
-int64_t frame_queue_last_pos(frame_queue_t *f);
+void frame_queue_unref_item(Frame *vp);
+int frame_queue_init(FrameQueue *f, PacketQueue *pktq, int max_size, int keep_last);
+void frame_queue_destory(FrameQueue *f);
+void frame_queue_signal(FrameQueue *f);
+Frame *frame_queue_peek(FrameQueue *f);
+Frame *frame_queue_peek_next(FrameQueue *f);
+Frame *frame_queue_peek_last(FrameQueue *f);
+Frame *frame_queue_peek_writable(FrameQueue *f);
+Frame *frame_queue_peek_readable(FrameQueue *f);
+void frame_queue_push(FrameQueue *f);
+void frame_queue_next(FrameQueue *f);
+int frame_queue_nb_remaining(FrameQueue *f);
+int64_t frame_queue_last_pos(FrameQueue *f);
 
 #endif

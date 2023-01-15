@@ -1,8 +1,8 @@
 ﻿#include "packet.h"
 
-int packet_queue_init(packet_queue_t *q)
+int packet_queue_init(PacketQueue *q)
 {
-    memset(q, 0, sizeof(packet_queue_t));
+    memset(q, 0, sizeof(PacketQueue));
     q->mutex = SDL_CreateMutex();
     if (!q->mutex)
     {
@@ -21,16 +21,16 @@ int packet_queue_init(packet_queue_t *q)
 
 
 // 写队列尾部。pkt是一包还未解码的音频数据
-int packet_queue_put(packet_queue_t *q, AVPacket *pkt)
+int packet_queue_put(PacketQueue *q, AVPacket *pkt)
 {
-    MyAVPacketList *pkt_list;
+    AVPacketToken *pkt_list;
     
     if (av_packet_make_refcounted(pkt) < 0)
     {
         printf("[pkt] is not refrence counted\n");
         return -1;
     }
-    pkt_list = av_malloc(sizeof(MyAVPacketList));
+    pkt_list = av_malloc(sizeof(AVPacketToken));
     if (!pkt_list)
     {
         return -1;
@@ -60,9 +60,9 @@ int packet_queue_put(packet_queue_t *q, AVPacket *pkt)
 }
 
 // 读队列头部。
-int packet_queue_get(packet_queue_t *q, AVPacket *pkt, int block)
+int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
 {
-    MyAVPacketList *p_pkt_node;
+    AVPacketToken *p_pkt_node;
     int ret;
 
     SDL_LockMutex(q->mutex);
@@ -98,7 +98,7 @@ int packet_queue_get(packet_queue_t *q, AVPacket *pkt, int block)
     return ret;
 }
 
-int packet_queue_put_nullpacket(packet_queue_t *q, int stream_index)
+int packet_queue_put_nullpacket(PacketQueue *q, int stream_index)
 {
     AVPacket pkt1, *pkt = &pkt1;
     // av_init_packet(pkt);
@@ -108,14 +108,14 @@ int packet_queue_put_nullpacket(packet_queue_t *q, int stream_index)
     return packet_queue_put(q, pkt);
 }
 
-void packet_queue_flush(packet_queue_t *q)
+void packet_queue_flush(PacketQueue *q)
 {
-    MyAVPacketList *pkt, *pkt1;
+    AVPacketToken *pkt, *pkt1;
 
     SDL_LockMutex(q->mutex);
     for (pkt = q->first_pkt; pkt; pkt = pkt1) {
         pkt1 = pkt->next;
-        av_packet_unref(&pkt->pkt);
+        if (pkt->pkt.size) av_packet_unref(&pkt->pkt);
         av_freep(&pkt);
     }
     q->last_pkt = NULL;
@@ -126,14 +126,14 @@ void packet_queue_flush(packet_queue_t *q)
     SDL_UnlockMutex(q->mutex);
 }
 
-void packet_queue_destroy(packet_queue_t *q)
+void packet_queue_destroy(PacketQueue *q)
 {
     packet_queue_flush(q);
     SDL_DestroyMutex(q->mutex);
     SDL_DestroyCond(q->cond);
 }
 
-void packet_queue_abort(packet_queue_t *q)
+void packet_queue_abort(PacketQueue *q)
 {
     SDL_LockMutex(q->mutex);
 

@@ -27,12 +27,14 @@
 #include "video.h"
 #include "audio.h"
 
-static player_stat_t *player_init(const char *p_input_file);
-static int player_deinit(player_stat_t *is);
+static PlayerState *player_init(const char *p_input_file);
+static int player_deinit(PlayerState *is);
 
 // 返回值：返回上一帧的pts更新值(上一帧pts+流逝的时间)
-double get_clock(play_clock_t *c)
+double get_clock(PlayClock *c)
 {
+    if (!c) return NAN;
+    
     if (*c->queue_serial != c->serial)
     {
         return NAN;
@@ -49,7 +51,7 @@ double get_clock(play_clock_t *c)
     }
 }
 
-void set_clock_at(play_clock_t *c, double pts, int serial, double time)
+void set_clock_at(PlayClock *c, double pts, int serial, double time)
 {
     c->pts = pts;
     c->last_updated = time;
@@ -57,19 +59,19 @@ void set_clock_at(play_clock_t *c, double pts, int serial, double time)
     c->serial = serial;
 }
 
-void set_clock(play_clock_t *c, double pts, int serial)
+void set_clock(PlayClock *c, double pts, int serial)
 {
     double time = av_gettime_relative() / 1000000.0;
     set_clock_at(c, pts, serial, time);
 }
 
-static void set_clock_speed(play_clock_t *c, double speed)
+static void set_clock_speed(PlayClock *c, double speed)
 {
     set_clock(c, get_clock(c), c->serial);
     c->speed = speed;
 }
 
-void init_clock(play_clock_t *c, int *queue_serial)
+void init_clock(PlayClock *c, int *queue_serial)
 {
     c->speed = 1.0;
     c->paused = 0;
@@ -77,7 +79,7 @@ void init_clock(play_clock_t *c, int *queue_serial)
     set_clock(c, NAN, -1);
 }
 
-static void sync_play_clock_to_slave(play_clock_t *c, play_clock_t *slave)
+static void sync_play_clock_to_slave(PlayClock *c, PlayClock *slave)
 {
     double clock = get_clock(c);
     double slave_clock = get_clock(slave);
@@ -85,7 +87,7 @@ static void sync_play_clock_to_slave(play_clock_t *c, play_clock_t *slave)
         set_clock(c, slave_clock, slave->serial);
 }
 
-static void do_exit(player_stat_t *is)
+static void do_exit(PlayerState *is)
 {
     if (is)
     {
@@ -104,11 +106,11 @@ static void do_exit(player_stat_t *is)
     exit(0);
 }
 
-static player_stat_t *player_init(const char *p_input_file)
+static PlayerState *player_init(const char *p_input_file)
 {
-    player_stat_t *is;
+    PlayerState *is;
 
-    is = av_mallocz(sizeof(player_stat_t));
+    is = av_mallocz(sizeof(PlayerState));
     if (!is)
     {
         return NULL;
@@ -162,7 +164,7 @@ fail:
 }
 
 
-static int player_deinit(player_stat_t *is)
+static int player_deinit(PlayerState *is)
 {
     /* XXX: use a special url_shutdown call to abort parse cleanly */
     is->abort_request = 1;
@@ -203,7 +205,7 @@ static int player_deinit(player_stat_t *is)
 }
 
 /* pause or resume the video */
-static void stream_toggle_pause(player_stat_t *is)
+static void stream_toggle_pause(PlayerState *is)
 {
     if (is->paused)
     {
@@ -214,7 +216,7 @@ static void stream_toggle_pause(player_stat_t *is)
     is->paused = is->audio_clk.paused = is->video_clk.paused = !is->paused;
 }
 
-static void toggle_pause(player_stat_t *is)
+static void toggle_pause(PlayerState *is)
 {
     stream_toggle_pause(is);
     is->step = 0;
@@ -222,7 +224,7 @@ static void toggle_pause(player_stat_t *is)
 
 int player_running(const char *p_input_file)
 {
-    player_stat_t *is = NULL;
+    PlayerState *is = NULL;
 
     is = player_init(p_input_file);
     if (is == NULL)

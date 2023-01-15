@@ -5,7 +5,7 @@
 static void sdl_audio_callback(void *opaque, Uint8 *stream, int len);
 
 // 从packet_queue中取一个packet，解码生成frame
-static int audio_decode_frame(AVCodecContext *p_codec_ctx, packet_queue_t *p_pkt_queue, AVFrame *frame)
+static int audio_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_queue, AVFrame *frame)
 {
     int ret;
 
@@ -85,9 +85,9 @@ static int audio_decode_frame(AVCodecContext *p_codec_ctx, packet_queue_t *p_pkt
 // 音频解码线程：从音频packet_queue中取数据，解码后放入音频frame_queue
 static int audio_decode_thread(void *arg)
 {
-    player_stat_t *is = (player_stat_t *)arg;
+    PlayerState *is = (PlayerState *)arg;
     AVFrame *p_frame = av_frame_alloc();
-    frame_t *af;
+    Frame *af;
 
     int got_frame = 0;
     AVRational tb;
@@ -131,7 +131,7 @@ the_end:
     return ret;
 }
 
-int open_audio_stream(player_stat_t *is)
+int open_audio_stream(PlayerState *is)
 {
     AVCodecContext *p_codec_ctx;
     int ret;
@@ -180,13 +180,13 @@ int open_audio_stream(player_stat_t *is)
     return 0;
 }
 
-static int audio_resample(player_stat_t *is, int64_t audio_callback_time)
+static int audio_resample(PlayerState *is, int64_t audio_callback_time)
 {
     int data_size, resampled_data_size;
     int64_t dec_channel_layout;
     av_unused double audio_clock0;
     int wanted_nb_samples;
-    frame_t *af;
+    Frame *af;
 
 #if defined(_WIN32)
     while (frame_queue_nb_remaining(&is->audio_frm_queue) == 0)
@@ -311,7 +311,7 @@ static int audio_resample(player_stat_t *is, int64_t audio_callback_time)
 
 static int open_audio_playing(void *arg)
 {
-    player_stat_t *is = (player_stat_t *)arg;
+    PlayerState *is = (PlayerState *)arg;
     SDL_AudioSpec wanted_spec;
     SDL_AudioSpec actual_spec;
 
@@ -375,7 +375,7 @@ static int open_audio_playing(void *arg)
 // 双声道采样点的顺序为LRLRLR
 static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
 {
-    player_stat_t *is = (player_stat_t *)opaque;
+    PlayerState *is = (PlayerState *)opaque;
     int audio_size, len1;
 
     int64_t audio_callback_time = av_gettime_relative();
@@ -434,7 +434,7 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
     }
 }
 
-int open_audio(player_stat_t *is)
+int open_audio(PlayerState *is)
 {
     open_audio_stream(is);
     open_audio_playing(is);

@@ -3,7 +3,7 @@
 
 #include "player.h"
 
-int open_video(player_stat_t *is);
+int open_video(PlayerState *is);
 
 #endif
 

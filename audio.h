@@ -3,6 +3,6 @@
 
 #include "player.h"
 
-int open_audio(player_stat_t *is);
+int open_audio(PlayerState *is);
 
 #endif

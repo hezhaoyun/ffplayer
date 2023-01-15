@@ -7,9 +7,10 @@
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
-                "${file}",
+                "${workspaceFolder}/*.c",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "ffplayer",
+                "`pkg-config --cflags --libs libavutil libavformat libavcodec libavutil libswscale libswresample sdl2`"
             ],
             "options": {
                 "cwd": "${fileDirname}"

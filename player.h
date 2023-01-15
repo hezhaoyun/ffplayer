@@ -65,7 +65,7 @@ typedef struct {
     int serial;                     // 播放序列，所谓播放序列就是一段连续的播放动作，一个seek操作会启动一段新的播放序列
     int paused;                     // 暂停标志
     int *queue_serial;              // 指向packet_serial
-}   play_clock_t;
+}   PlayClock;
 
 typedef struct {
     int freq;
@@ -73,22 +73,22 @@ typedef struct {
     enum AVSampleFormat fmt;
     int frame_size;
     int bytes_per_sec;
-}   audio_param_t;
+}   AudioParam;
 
 typedef struct {
     SDL_Window *window; 
     SDL_Renderer *renderer;
     SDL_Texture *texture;
     SDL_Rect rect;
-}   sdl_video_t;
+}   SdlVideo;
 
-typedef struct MyAVPacketList {
+typedef struct AVPacketToken {
     AVPacket pkt;
-    struct MyAVPacketList *next;
-} MyAVPacketList;
+    struct AVPacketToken *next;
+} AVPacketToken;
 
-typedef struct packet_queue_t {
-    MyAVPacketList *first_pkt, *last_pkt;
+typedef struct PacketQueue {
+    AVPacketToken *first_pkt, *last_pkt;
     int nb_packets;                 // 队列中packet的数量
     int size;                       // 队列所占内存空间大小
     int64_t duration;               // 队列中所有packet总的播放时长
@@ -96,7 +96,7 @@ typedef struct packet_queue_t {
     int serial;                     // 播放序列，所谓播放序列就是一段连续的播放动作，一个seek操作会启动一段新的播放序列
     SDL_mutex *mutex;
     SDL_cond *cond;
-}   packet_queue_t;
+}   PacketQueue;
 
 /* Common struct for handling all types of decoded data and allocated render buffers. */
 typedef struct {
@@ -111,10 +111,10 @@ typedef struct {
     AVRational sar;
     int uploaded;
     int flip_v;
-}   frame_t;
+}   Frame;
 
 typedef struct {
-    frame_t queue[FRAME_QUEUE_SIZE];
+    Frame queue[FRAME_QUEUE_SIZE];
     int rindex;                     // 读索引。待播放时读取此帧进行播放，播放后此帧成为上一帧
     int windex;                     // 写索引
     int size;                       // 总帧数
@@ -123,8 +123,8 @@ typedef struct {
     int rindex_shown;               // 当前是否有帧在显示
     SDL_mutex *mutex;
     SDL_cond *cond;
-    packet_queue_t *pktq;           // 指向对应的packet_queue
-}   frame_queue_t;
+    PacketQueue *pktq;           // 指向对应的packet_queue
+}   FrameQueue;
 
 typedef struct {
     char *filename;
@@ -136,23 +136,23 @@ typedef struct {
 
     int audio_idx;
     int video_idx;
-    sdl_video_t sdl_video;
+    SdlVideo sdl_video;
 
-    play_clock_t audio_clk;                   // 音频时钟
-    play_clock_t video_clk;                   // 视频时钟
+    PlayClock audio_clk;                   // 音频时钟
+    PlayClock video_clk;                   // 视频时钟
     double frame_timer;
 
-    packet_queue_t audio_pkt_queue;
-    packet_queue_t video_pkt_queue;
-    frame_queue_t audio_frm_queue;
-    frame_queue_t video_frm_queue;
+    PacketQueue audio_pkt_queue;
+    PacketQueue video_pkt_queue;
+    FrameQueue audio_frm_queue;
+    FrameQueue video_frm_queue;
 
     struct SwsContext *img_convert_ctx;
     struct SwrContext *audio_swr_ctx;
     AVFrame *p_frm_yuv;
 
-    audio_param_t audio_param_src;
-    audio_param_t audio_param_tgt;
+    AudioParam audio_param_src;
+    AudioParam audio_param_tgt;
     int audio_hw_buf_size;              // SDL音频缓冲区大小(单位字节)
     uint8_t *p_audio_frm;               // 指向待播放的一帧音频数据，指向的数据区将被拷入SDL音频缓冲区。若经过重采样则指向audio_frm_rwr，否则指向frame中的音频
     uint8_t *audio_frm_rwr;             // 音频重采样的输出缓冲区
@@ -170,11 +170,11 @@ typedef struct {
     SDL_cond *continue_read_thread;
     SDL_Thread *read_tid;           // demux解复用线程
 
-}   player_stat_t;
+}   PlayerState;
 
 int player_running(const char *p_input_file);
-double get_clock(play_clock_t *c);
-void set_clock_at(play_clock_t *c, double pts, int serial, double time);
-void set_clock(play_clock_t *c, double pts, int serial);
+double get_clock(PlayClock *c);
+void set_clock_at(PlayClock *c, double pts, int serial, double time);
+void set_clock(PlayClock *c, double pts, int serial);
 
 #endif

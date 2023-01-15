@@ -3,9 +3,9 @@
 #include "frame.h"
 #include "player.h"
 
-static int queue_picture(player_stat_t *is, AVFrame *src_frame, double pts, double duration, int64_t pos)
+static int queue_picture(PlayerState *is, AVFrame *src_frame, double pts, double duration, int64_t pos)
 {
-    frame_t *vp;
+    Frame *vp;
 
     if (!(vp = frame_queue_peek_writable(&is->video_frm_queue)))
         return -1;
@@ -33,7 +33,7 @@ static int queue_picture(player_stat_t *is, AVFrame *src_frame, double pts, doub
 
 
 // 从packet_queue中取一个packet，解码生成frame
-static int video_decode_frame(AVCodecContext *p_codec_ctx, packet_queue_t *p_pkt_queue, AVFrame *frame)
+static int video_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_queue, AVFrame *frame)
 {
     int ret;
     
@@ -107,7 +107,7 @@ static int video_decode_frame(AVCodecContext *p_codec_ctx, packet_queue_t *p_pkt
 // 将视频包解码得到视频帧，然后写入picture队列
 static int video_decode_thread(void *arg)
 {
-    player_stat_t *is = (player_stat_t *)arg;
+    PlayerState *is = (PlayerState *)arg;
     AVFrame *p_frame = av_frame_alloc();
     double pts;
     double duration;
@@ -151,7 +151,7 @@ exit:
 // 根据视频时钟与同步时钟(如音频时钟)的差值，校正delay值，使视频时钟追赶或等待同步时钟
 // 输入参数delay是上一帧播放时长，即上一帧播放后应延时多长时间后再播放当前帧，通过调节此值来调节当前帧播放快慢
 // 返回值delay是将输入参数delay经校正后得到的值
-static double compute_target_delay(double delay, player_stat_t *is)
+static double compute_target_delay(double delay, PlayerState *is)
 {
     double sync_threshold, diff = 0;
 
@@ -186,7 +186,7 @@ static double compute_target_delay(double delay, player_stat_t *is)
     return delay;
 }
 
-static double vp_duration(player_stat_t *is, frame_t *vp, frame_t *nextvp) {
+static double vp_duration(PlayerState *is, Frame *vp, Frame *nextvp) {
     if (vp->serial == nextvp->serial)
     {
         double duration = nextvp->pts - vp->pts;
@@ -199,15 +199,15 @@ static double vp_duration(player_stat_t *is, frame_t *vp, frame_t *nextvp) {
     }
 }
 
-static void update_video_pts(player_stat_t *is, double pts, int64_t pos, int serial) {
+static void update_video_pts(PlayerState *is, double pts, int64_t pos, int serial) {
     /* update current video pts */
     set_clock(&is->video_clk, pts, serial);            // 更新vidclock
     //-sync_clock_to_slave(&is->extclk, &is->vidclk);  // 将extclock同步到vidclock
 }
 
-static void video_display(player_stat_t *is)
+static void video_display(PlayerState *is)
 {
-    frame_t *vp;
+    Frame *vp;
 
     vp = frame_queue_peek_last(&is->video_frm_queue);
 
@@ -254,7 +254,7 @@ static void video_display(player_stat_t *is)
 /* called to display each frame */
 static void video_refresh(void *opaque, double *remaining_time)
 {
-    player_stat_t *is = (player_stat_t *)opaque;
+    PlayerState *is = (PlayerState *)opaque;
     double time;
     static bool first_frame = true;
 
@@ -266,7 +266,7 @@ retry:
     }
 
     double last_duration, duration, delay;
-    frame_t *vp, *lastvp;
+    Frame *vp, *lastvp;
 
     /* dequeue the picture */
     lastvp = frame_queue_peek_last(&is->video_frm_queue);     // 上一帧：上次已显示的帧
@@ -314,7 +314,7 @@ retry:
     // 是否要丢弃未能及时播放的视频帧
     if (frame_queue_nb_remaining(&is->video_frm_queue) > 1)  // 队列中未显示帧数>1(只有一帧则不考虑丢帧)
     {         
-        frame_t *nextvp = frame_queue_peek_next(&is->video_frm_queue);  // 下一帧：下一待显示的帧
+        Frame *nextvp = frame_queue_peek_next(&is->video_frm_queue);  // 下一帧：下一待显示的帧
         duration = vp_duration(is, vp, nextvp);             // 当前帧vp播放时长 = nextvp->pts - vp->pts
         // 当前帧vp未能及时播放，即下一帧播放时刻(is->frame_timer+duration)小于当前系统时刻(time)
         if (time > is->frame_timer + duration)
@@ -333,7 +333,7 @@ display:
 
 static int video_playing_thread(void *arg)
 {
-    player_stat_t *is = (player_stat_t *)arg;
+    PlayerState *is = (PlayerState *)arg;
     double remaining_time = 0.0;
 
     while (1)
@@ -352,7 +352,7 @@ static int video_playing_thread(void *arg)
 
 static int open_video_playing(void *arg)
 {
-    player_stat_t *is = (player_stat_t *)arg;
+    PlayerState *is = (PlayerState *)arg;
     int ret;
     int buf_size;
     uint8_t* buffer = NULL;
@@ -464,7 +464,7 @@ static int open_video_playing(void *arg)
     return 0;
 }
 
-static int open_video_stream(player_stat_t *is)
+static int open_video_stream(PlayerState *is)
 {
     AVStream *p_stream = is->p_video_stream;
     int ret;
@@ -512,7 +512,7 @@ static int open_video_stream(player_stat_t *is)
     return 0;
 }
 
-int open_video(player_stat_t *is)
+int open_video(PlayerState *is)
 {
     open_video_stream(is);
     open_video_playing(is);
