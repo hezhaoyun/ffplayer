@@ -211,7 +211,7 @@ static void video_display(PlayerState *is)
 
     vp = frame_queue_peek_last(&is->video_frm_queue);
 
-    // 图像转换：p_frm_raw->data ==> p_frm_yuv->data
+    // 图像转换：p_frm_raw->data ==> frm_yuv->data
     // 将源图像中一片连续的区域经过处理后更新到目标图像对应区域，处理的图像区域必须逐行连续
     // plane: 如YUV有Y、U、V三个plane，RGB有R、G、B三个plane
     // slice: 图像中一片连续的行，必须是连续的，顺序由顶部到底部或由底部到顶部
@@ -223,19 +223,19 @@ static void video_display(PlayerState *is)
               vp->frame->linesize,                    // src stride
               0,                                      // src slice y
               is->vcodec_ctx->height,               // src slice height
-              is->p_frm_yuv->data,                    // dst planes
-              is->p_frm_yuv->linesize                 // dst strides
+              is->frm_yuv->data,                    // dst planes
+              is->frm_yuv->linesize                 // dst strides
              );
     
     // 使用新的YUV像素数据更新SDL_Rect
     SDL_UpdateYUVTexture(is->sdl_video.texture,         // sdl texture
                          &is->sdl_video.rect,           // sdl rect
-                         is->p_frm_yuv->data[0],        // y plane
-                         is->p_frm_yuv->linesize[0],    // y pitch
-                         is->p_frm_yuv->data[1],        // u plane
-                         is->p_frm_yuv->linesize[1],    // u pitch
-                         is->p_frm_yuv->data[2],        // v plane
-                         is->p_frm_yuv->linesize[2]     // v pitch
+                         is->frm_yuv->data[0],        // y plane
+                         is->frm_yuv->linesize[0],    // y pitch
+                         is->frm_yuv->data[1],        // u plane
+                         is->frm_yuv->linesize[1],    // u pitch
+                         is->frm_yuv->data[2],        // v plane
+                         is->frm_yuv->linesize[2]     // v pitch
                         );
     
     // 使用特定颜色清空当前渲染目标
@@ -357,8 +357,8 @@ static int open_video_playing(void *arg)
     int buf_size;
     uint8_t* buffer = NULL;
 
-    is->p_frm_yuv = av_frame_alloc();
-    if (is->p_frm_yuv == NULL)
+    is->frm_yuv = av_frame_alloc();
+    if (is->frm_yuv == NULL)
     {
         printf("av_frame_alloc() for p_frm_raw failed\n");
         return -1;
@@ -378,8 +378,8 @@ static int open_video_playing(void *arg)
         return -1;
     }
     // 使用给定参数设定p_frm_yuv->data和p_frm_yuv->linesize
-    ret = av_image_fill_arrays(is->p_frm_yuv->data,     // dst data[]
-                               is->p_frm_yuv->linesize, // dst linesize[]
+    ret = av_image_fill_arrays(is->frm_yuv->data,     // dst data[]
+                               is->frm_yuv->linesize, // dst linesize[]
                                buffer,                  // src buffer
                                AV_PIX_FMT_YUV420P,      // pixel format
                                is->vcodec_ctx->width, // width

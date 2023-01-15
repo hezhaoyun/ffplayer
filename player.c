@@ -31,7 +31,7 @@ static PlayerState *player_init(const char *input_file);
 static int player_deinit(PlayerState *is);
 
 // 返回值：返回上一帧的pts更新值(上一帧pts+流逝的时间)
-double get_clock(PlayClock *c)
+double get_clock(PlayerClock *c)
 {
     if (!c) return NAN;
     
@@ -51,7 +51,7 @@ double get_clock(PlayClock *c)
     }
 }
 
-void set_clock_at(PlayClock *c, double pts, int serial, double time)
+void set_clock_at(PlayerClock *c, double pts, int serial, double time)
 {
     c->pts = pts;
     c->last_updated = time;
@@ -59,19 +59,19 @@ void set_clock_at(PlayClock *c, double pts, int serial, double time)
     c->serial = serial;
 }
 
-void set_clock(PlayClock *c, double pts, int serial)
+void set_clock(PlayerClock *c, double pts, int serial)
 {
     double time = av_gettime_relative() / 1000000.0;
     set_clock_at(c, pts, serial, time);
 }
 
-static void set_clock_speed(PlayClock *c, double speed)
+static void set_clock_speed(PlayerClock *c, double speed)
 {
     set_clock(c, get_clock(c), c->serial);
     c->speed = speed;
 }
 
-void init_clock(PlayClock *c, int *queue_serial)
+void init_clock(PlayerClock *c, int *queue_serial)
 {
     c->speed = 1.0;
     c->paused = 0;
@@ -79,7 +79,7 @@ void init_clock(PlayClock *c, int *queue_serial)
     set_clock(c, NAN, -1);
 }
 
-static void sync_play_clock_to_slave(PlayClock *c, PlayClock *slave)
+static void sync_play_clock_to_slave(PlayerClock *c, PlayerClock *slave)
 {
     double clock = get_clock(c);
     double slave_clock = get_clock(slave);

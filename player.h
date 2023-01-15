@@ -57,7 +57,7 @@
 
 #define FF_QUIT_EVENT    (SDL_USEREVENT + 2)
 
-typedef struct PlayClock {
+typedef struct PlayerClock {
     double pts;                     // 当前帧(待播放)显示时间戳，播放后，当前帧变成上一帧
     double pts_drift;               // 当前帧显示时间戳与当前系统时钟时间的差值
     double last_updated;            // 当前时钟(如视频时钟)最后一次更新时间，也可称当前时钟时间
@@ -65,7 +65,7 @@ typedef struct PlayClock {
     int serial;                     // 播放序列，所谓播放序列就是一段连续的播放动作，一个seek操作会启动一段新的播放序列
     int paused;                     // 暂停标志
     int *queue_serial;              // 指向packet_serial
-}   PlayClock;
+}   PlayerClock;
 
 typedef struct AudioParam {
     int freq;
@@ -123,7 +123,7 @@ typedef struct FrameQueue {
     int rindex_shown;               // 当前是否有帧在显示
     SDL_mutex *mutex;
     SDL_cond *cond;
-    PacketQueue *pktq;           // 指向对应的packet_queue
+    PacketQueue *pktq;              // 指向对应的packet_queue
 }   FrameQueue;
 
 typedef struct PlayerState {
@@ -138,8 +138,8 @@ typedef struct PlayerState {
     int video_idx;
     SdlVideo sdl_video;
 
-    PlayClock audio_clk;                   // 音频时钟
-    PlayClock video_clk;                   // 视频时钟
+    PlayerClock audio_clk;              // 音频时钟
+    PlayerClock video_clk;              // 视频时钟
     double frame_timer;
 
     PacketQueue audio_pkt_queue;
@@ -149,12 +149,12 @@ typedef struct PlayerState {
 
     struct SwsContext *img_convert_ctx;
     struct SwrContext *audio_swr_ctx;
-    AVFrame *p_frm_yuv;
+    AVFrame *frm_yuv;
 
     AudioParam audio_param_src;
     AudioParam audio_param_tgt;
     int audio_hw_buf_size;              // SDL音频缓冲区大小(单位字节)
-    uint8_t *p_audio_frm;               // 指向待播放的一帧音频数据，指向的数据区将被拷入SDL音频缓冲区。若经过重采样则指向audio_frm_rwr，否则指向frame中的音频
+    uint8_t *audio_frm;                 // 指向待播放的一帧音频数据，指向的数据区将被拷入SDL音频缓冲区。若经过重采样则指向audio_frm_rwr，否则指向frame中的音频
     uint8_t *audio_frm_rwr;             // 音频重采样的输出缓冲区
     unsigned int audio_frm_size;        // 待播放的一帧音频数据(audio_buf指向)的大小
     unsigned int audio_frm_rwr_size;    // 申请到的音频缓冲区audio_frm_rwr的实际尺寸
@@ -173,8 +173,8 @@ typedef struct PlayerState {
 }   PlayerState;
 
 int player_running(const char *p_input_file);
-double get_clock(PlayClock *c);
-void set_clock_at(PlayClock *c, double pts, int serial, double time);
-void set_clock(PlayClock *c, double pts, int serial);
+double get_clock(PlayerClock *c);
+void set_clock_at(PlayerClock *c, double pts, int serial, double time);
+void set_clock(PlayerClock *c, double pts, int serial);
 
 #endif

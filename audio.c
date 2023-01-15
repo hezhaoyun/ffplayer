@@ -275,14 +275,14 @@ static int audio_resample(PlayerState *is, int64_t audio_callback_time)
             if (swr_init(is->audio_swr_ctx) < 0)
                 swr_free(&is->audio_swr_ctx);
         }
-        is->p_audio_frm = is->audio_frm_rwr;
+        is->audio_frm = is->audio_frm_rwr;
         // 重采样返回的一帧音频数据大小(以字节为单位)
         resampled_data_size = len2 * is->audio_param_tgt.ch_layout.nb_channels * av_get_bytes_per_sample(is->audio_param_tgt.fmt);
     }
     else
     {
         // 未经重采样，则将指针指向frame中的音频数据
-        is->p_audio_frm = af->frame->data[0];
+        is->audio_frm = af->frame->data[0];
         resampled_data_size = data_size;
     }
 
@@ -389,7 +389,7 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
             if (audio_size < 0)
             {
                 /* if error, just output silence */
-                is->p_audio_frm = NULL;
+                is->audio_frm = NULL;
                 is->audio_frm_size = SDL_AUDIO_MIN_BUFFER_SIZE / is->audio_param_tgt.frame_size * is->audio_param_tgt.frame_size;
             }
             else
@@ -406,9 +406,9 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
             len1 = len;
         }
         // 2. 将转换后的音频数据拷贝到音频缓冲区stream中，之后的播放就是音频设备驱动程序的工作了
-        if (is->p_audio_frm != NULL)
+        if (is->audio_frm != NULL)
         {
-            memcpy(stream, (uint8_t *)is->p_audio_frm + is->audio_cp_index, len1);
+            memcpy(stream, (uint8_t *)is->audio_frm + is->audio_cp_index, len1);
         }
         else
         {
