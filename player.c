@@ -27,7 +27,7 @@
 #include "video.h"
 #include "audio.h"
 
-static PlayerState *player_init(const char *p_input_file);
+static PlayerState *player_init(const char *input_file);
 static int player_deinit(PlayerState *is);
 
 // 返回值：返回上一帧的pts更新值(上一帧pts+流逝的时间)
@@ -106,7 +106,7 @@ static void do_exit(PlayerState *is)
     exit(0);
 }
 
-static PlayerState *player_init(const char *p_input_file)
+static PlayerState *player_init(const char *input_file)
 {
     PlayerState *is;
 
@@ -116,7 +116,7 @@ static PlayerState *player_init(const char *p_input_file)
         return NULL;
     }
 
-    is->filename = av_strdup(p_input_file);
+    is->filename = av_strdup(input_file);
     if (is->filename == NULL)
     {
         goto fail;
@@ -145,7 +145,7 @@ static PlayerState *player_init(const char *p_input_file)
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
 fail:
         player_deinit(is);
-        goto fail;
+        return NULL;
     }
 
     init_clock(&is->video_clk, &is->video_pkt_queue.serial);
@@ -173,14 +173,14 @@ static int player_deinit(PlayerState *is)
     /* close each stream */
     if (is->audio_idx >= 0)
     {
-        //stream_component_close(is, is->p_audio_stream);
+        //stream_component_close(is, is->audio_stream);
     }
     if (is->video_idx >= 0)
     {
-        //stream_component_close(is, is->p_video_stream);
+        //stream_component_close(is, is->video_stream);
     }
 
-    avformat_close_input(&is->p_fmt_ctx);
+    avformat_close_input(&is->fmt_ctx);
 
     packet_queue_abort(&is->video_pkt_queue);
     packet_queue_abort(&is->audio_pkt_queue);
@@ -222,11 +222,11 @@ static void toggle_pause(PlayerState *is)
     is->step = 0;
 }
 
-int player_running(const char *p_input_file)
+int player_running(const char *input_file)
 {
     PlayerState *is = NULL;
 
-    is = player_init(p_input_file);
+    is = player_init(input_file);
     if (is == NULL)
     {
         printf("player init failed\n");

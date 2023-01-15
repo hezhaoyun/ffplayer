@@ -9,13 +9,13 @@ static int decode_interrupt_cb(void *ctx)
 
 static int demux_init(PlayerState *is)
 {
-    AVFormatContext *p_fmt_ctx = NULL;
+    AVFormatContext *fmt_ctx = NULL;
     int err, i, ret;
     int a_idx;
     int v_idx;
 
-    p_fmt_ctx = avformat_alloc_context();
-    if (!p_fmt_ctx)
+    fmt_ctx = avformat_alloc_context();
+    if (!fmt_ctx)
     {
         printf("Could not allocate context.\n");
         ret = AVERROR(ENOMEM);
@@ -23,23 +23,23 @@ static int demux_init(PlayerState *is)
     }
 
     // 中断回调机制。为底层I/O层提供一个处理接口，比如中止IO操作。
-    p_fmt_ctx->interrupt_callback.callback = decode_interrupt_cb;
-    p_fmt_ctx->interrupt_callback.opaque = is;
+    fmt_ctx->interrupt_callback.callback = decode_interrupt_cb;
+    fmt_ctx->interrupt_callback.opaque = is;
 
     // 1. 构建AVFormatContext
     // 1.1 打开视频文件：读取文件头，将文件格式信息存储在"fmt context"中
-    err = avformat_open_input(&p_fmt_ctx, is->filename, NULL, NULL);
+    err = avformat_open_input(&fmt_ctx, is->filename, NULL, NULL);
     if (err < 0)
     {
         printf("avformat_open_input() failed %d\n", err);
         ret = -1;
         goto fail;
     }
-    is->p_fmt_ctx = p_fmt_ctx;
+    is->fmt_ctx = fmt_ctx;
 
     // 1.2 搜索流信息：读取一段视频文件数据，尝试解码，将取到的流信息填入p_fmt_ctx->streams
     //     ic->streams是一个指针数组，数组大小是pFormatCtx->nb_streams
-    err = avformat_find_stream_info(p_fmt_ctx, NULL);
+    err = avformat_find_stream_info(fmt_ctx, NULL);
     if (err < 0)
     {
         printf("avformat_find_stream_info() failed %d\n", err);
@@ -50,15 +50,15 @@ static int demux_init(PlayerState *is)
     // 2. 查找第一个音频流/视频流
     a_idx = -1;
     v_idx = -1;
-    for (i=0; i<(int)p_fmt_ctx->nb_streams; i++)
+    for (i=0; i<(int)fmt_ctx->nb_streams; i++)
     {
-        if ((p_fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) &&
+        if ((fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) &&
             (a_idx == -1))
         {
             a_idx = i;
             printf("Find a audio stream, index %d\n", a_idx);
         }
-        if ((p_fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) &&
+        if ((fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) &&
             (v_idx == -1))
         {
             v_idx = i;
@@ -74,17 +74,17 @@ static int demux_init(PlayerState *is)
         printf("Cann't find any audio/video stream\n");
         ret = -1;
  fail:
-        if (p_fmt_ctx != NULL)
+        if (fmt_ctx != NULL)
         {
-            avformat_close_input(&p_fmt_ctx);
+            avformat_close_input(&fmt_ctx);
         }
         return ret;
     }
 
     is->audio_idx = a_idx;
     is->video_idx = v_idx;
-    is->p_audio_stream = p_fmt_ctx->streams[a_idx];
-    is->p_video_stream = p_fmt_ctx->streams[v_idx];
+    is->audio_stream = fmt_ctx->streams[a_idx];
+    is->video_stream = fmt_ctx->streams[v_idx];
 
     return 0;
 }
@@ -106,7 +106,7 @@ static int stream_has_enough_packets(AVStream *st, int stream_id, PacketQueue *q
 static int demux_thread(void *arg)
 {
     PlayerState *is = (PlayerState *)arg;
-    AVFormatContext *p_fmt_ctx = is->p_fmt_ctx;
+    AVFormatContext *fmt_ctx = is->fmt_ctx;
     int ret;
     AVPacket pkt1, *pkt = &pkt1;
 
@@ -124,8 +124,8 @@ static int demux_thread(void *arg)
         
         /* if the queue are full, no need to read more */
         if (is->audio_pkt_queue.size + is->video_pkt_queue.size > MAX_QUEUE_SIZE ||
-            (stream_has_enough_packets(is->p_audio_stream, is->audio_idx, &is->audio_pkt_queue) &&
-             stream_has_enough_packets(is->p_video_stream, is->video_idx, &is->video_pkt_queue)))
+            (stream_has_enough_packets(is->audio_stream, is->audio_idx, &is->audio_pkt_queue) &&
+             stream_has_enough_packets(is->video_stream, is->video_idx, &is->video_pkt_queue)))
         {
             /* wait 10 ms */
             SDL_LockMutex(wait_mutex);
@@ -135,7 +135,7 @@ static int demux_thread(void *arg)
         }
 
         // 4.1 从输入文件中读取一个packet
-        ret = av_read_frame(is->p_fmt_ctx, pkt);
+        ret = av_read_frame(is->fmt_ctx, pkt);
         if (ret < 0)
         {
             if (ret == AVERROR_EOF) // || avio_feof(ic->pb)) && !is->eof)

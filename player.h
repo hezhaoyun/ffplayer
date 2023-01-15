@@ -57,7 +57,7 @@
 
 #define FF_QUIT_EVENT    (SDL_USEREVENT + 2)
 
-typedef struct {
+typedef struct PlayClock {
     double pts;                     // 当前帧(待播放)显示时间戳，播放后，当前帧变成上一帧
     double pts_drift;               // 当前帧显示时间戳与当前系统时钟时间的差值
     double last_updated;            // 当前时钟(如视频时钟)最后一次更新时间，也可称当前时钟时间
@@ -67,7 +67,7 @@ typedef struct {
     int *queue_serial;              // 指向packet_serial
 }   PlayClock;
 
-typedef struct {
+typedef struct AudioParam {
     int freq;
     AVChannelLayout ch_layout;
     enum AVSampleFormat fmt;
@@ -75,7 +75,7 @@ typedef struct {
     int bytes_per_sec;
 }   AudioParam;
 
-typedef struct {
+typedef struct SdlVideo {
     SDL_Window *window; 
     SDL_Renderer *renderer;
     SDL_Texture *texture;
@@ -99,7 +99,7 @@ typedef struct PacketQueue {
 }   PacketQueue;
 
 /* Common struct for handling all types of decoded data and allocated render buffers. */
-typedef struct {
+typedef struct Frame {
     AVFrame *frame;
     int serial;
     double pts;           /* presentation timestamp for the frame */
@@ -113,7 +113,7 @@ typedef struct {
     int flip_v;
 }   Frame;
 
-typedef struct {
+typedef struct FrameQueue {
     Frame queue[FRAME_QUEUE_SIZE];
     int rindex;                     // 读索引。待播放时读取此帧进行播放，播放后此帧成为上一帧
     int windex;                     // 写索引
@@ -126,13 +126,13 @@ typedef struct {
     PacketQueue *pktq;           // 指向对应的packet_queue
 }   FrameQueue;
 
-typedef struct {
+typedef struct PlayerState {
     char *filename;
-    AVFormatContext *p_fmt_ctx;
-    AVStream *p_audio_stream;
-    AVStream *p_video_stream;
-    AVCodecContext *p_acodec_ctx;
-    AVCodecContext *p_vcodec_ctx;
+    AVFormatContext *fmt_ctx;
+    AVStream *audio_stream;
+    AVStream *video_stream;
+    AVCodecContext *acodec_ctx;
+    AVCodecContext *vcodec_ctx;
 
     int audio_idx;
     int video_idx;

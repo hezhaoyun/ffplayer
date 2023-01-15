@@ -113,8 +113,8 @@ static int video_decode_thread(void *arg)
     double duration;
     int ret;
     int got_picture;
-    AVRational tb = is->p_video_stream->time_base;
-    AVRational frame_rate = av_guess_frame_rate(is->p_fmt_ctx, is->p_video_stream, NULL);
+    AVRational tb = is->video_stream->time_base;
+    AVRational frame_rate = av_guess_frame_rate(is->fmt_ctx, is->video_stream, NULL);
     
     if (p_frame == NULL)
     {
@@ -124,7 +124,7 @@ static int video_decode_thread(void *arg)
 
     while (1)
     {
-        got_picture = video_decode_frame(is->p_vcodec_ctx, &is->video_pkt_queue, p_frame);
+        got_picture = video_decode_frame(is->vcodec_ctx, &is->video_pkt_queue, p_frame);
         if (got_picture < 0)
         {
             goto exit;
@@ -222,7 +222,7 @@ static void video_display(PlayerState *is)
               (const uint8_t *const *)vp->frame->data,// src slice
               vp->frame->linesize,                    // src stride
               0,                                      // src slice y
-              is->p_vcodec_ctx->height,               // src slice height
+              is->vcodec_ctx->height,               // src slice height
               is->p_frm_yuv->data,                    // dst planes
               is->p_frm_yuv->linesize                 // dst strides
              );
@@ -366,8 +366,8 @@ static int open_video_playing(void *arg)
 
     // 为AVFrame.*data[]手工分配缓冲区，用于存储sws_scale()中目的帧视频数据
     buf_size = av_image_get_buffer_size(AV_PIX_FMT_YUV420P, 
-                                        is->p_vcodec_ctx->width, 
-                                        is->p_vcodec_ctx->height, 
+                                        is->vcodec_ctx->width, 
+                                        is->vcodec_ctx->height, 
                                         1
                                         );
     // buffer将作为p_frm_yuv的视频数据缓冲区
@@ -382,8 +382,8 @@ static int open_video_playing(void *arg)
                                is->p_frm_yuv->linesize, // dst linesize[]
                                buffer,                  // src buffer
                                AV_PIX_FMT_YUV420P,      // pixel format
-                               is->p_vcodec_ctx->width, // width
-                               is->p_vcodec_ctx->height,// height
+                               is->vcodec_ctx->width, // width
+                               is->vcodec_ctx->height,// height
                                1                        // align
                                );
     if (ret < 0)
@@ -398,11 +398,11 @@ static int open_video_playing(void *arg)
     //     如果解码后得到图像的不被SDL支持，不进行图像转换的话，SDL是无法正常显示图像的
     //     如果解码后得到图像的能被SDL支持，则不必进行图像转换
     //     这里为了编码简便，统一转换为SDL支持的格式AV_PIX_FMT_YUV420P==>SDL_PIXELFORMAT_IYUV
-    is->img_convert_ctx = sws_getContext(is->p_vcodec_ctx->width,   // src width
-                                         is->p_vcodec_ctx->height,  // src height
-                                         is->p_vcodec_ctx->pix_fmt, // src format
-                                         is->p_vcodec_ctx->width,   // dst width
-                                         is->p_vcodec_ctx->height,  // dst height
+    is->img_convert_ctx = sws_getContext(is->vcodec_ctx->width,   // src width
+                                         is->vcodec_ctx->height,  // src height
+                                         is->vcodec_ctx->pix_fmt, // src format
+                                         is->vcodec_ctx->width,   // dst width
+                                         is->vcodec_ctx->height,  // dst height
                                          AV_PIX_FMT_YUV420P,        // dst format
                                          SWS_BICUBIC,               // flags
                                          NULL,                      // src filter
@@ -418,8 +418,8 @@ static int open_video_playing(void *arg)
     // SDL_Rect赋值
     is->sdl_video.rect.x = 0;
     is->sdl_video.rect.y = 0;
-    is->sdl_video.rect.w = is->p_vcodec_ctx->width;
-    is->sdl_video.rect.h = is->p_vcodec_ctx->height;
+    is->sdl_video.rect.w = is->vcodec_ctx->width;
+    is->sdl_video.rect.h = is->vcodec_ctx->height;
 
     // 1. 创建SDL窗口，SDL 2.0支持多窗口
     //    SDL_Window即运行程序后弹出的视频窗口，同SDL 1.x中的SDL_Surface
@@ -466,7 +466,7 @@ static int open_video_playing(void *arg)
 
 static int open_video_stream(PlayerState *is)
 {
-    AVStream *p_stream = is->p_video_stream;
+    AVStream *p_stream = is->video_stream;
     int ret;
 
     // 1. 为视频流构建解码器AVCodecContext
@@ -504,7 +504,7 @@ static int open_video_stream(PlayerState *is)
         return -1;
     }
 
-    is->p_vcodec_ctx = p_codec_ctx;
+    is->vcodec_ctx = p_codec_ctx;
     
     // 2. 创建视频解码线程
     SDL_CreateThread(video_decode_thread, "video decode thread", is);

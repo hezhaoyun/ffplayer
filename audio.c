@@ -100,7 +100,7 @@ static int audio_decode_thread(void *arg)
 
     while (1)
     {
-        got_frame = audio_decode_frame(is->p_acodec_ctx, &is->audio_pkt_queue, p_frame);
+        got_frame = audio_decode_frame(is->acodec_ctx, &is->audio_pkt_queue, p_frame);
         if (got_frame < 0)
         {
             goto the_end;
@@ -139,7 +139,7 @@ int open_audio_stream(PlayerState *is)
     // 1. 为音频流构建解码器AVCodecContext
 
     // 1.1 获取解码器参数AVCodecParameters
-    AVCodecParameters *p_codec_par = is->p_audio_stream->codecpar;
+    AVCodecParameters *p_codec_par = is->audio_stream->codecpar;
     // 1.2 获取解码器
     const AVCodec* p_codec = avcodec_find_decoder(p_codec_par->codec_id);
     if (p_codec == NULL)
@@ -171,8 +171,8 @@ int open_audio_stream(PlayerState *is)
         return -1;
     }
 
-    p_codec_ctx->pkt_timebase = is->p_audio_stream->time_base;
-    is->p_acodec_ctx = p_codec_ctx;
+    p_codec_ctx->pkt_timebase = is->audio_stream->time_base;
+    is->acodec_ctx = p_codec_ctx;
 
     // 2. 创建视频解码线程
     SDL_CreateThread(audio_decode_thread, "audio decode thread", is);
@@ -321,9 +321,9 @@ static int open_audio_playing(void *arg)
     //    a. push，SDL以特定的频率调用回调函数，在回调函数中取得音频数据
     //    b. pull，用户程序以特定的频率调用SDL_QueueAudio()，向音频设备提供数据。此种情况wanted_spec.callback=NULL
     // 2) 音频设备打开后播放静音，不启动回调，调用SDL_PauseAudio(0)后启动回调，开始正常播放音频
-    wanted_spec.freq = is->p_acodec_ctx->sample_rate;   // 采样率
+    wanted_spec.freq = is->acodec_ctx->sample_rate;   // 采样率
     wanted_spec.format = AUDIO_S16SYS;                  // S表带符号，16是采样深度，SYS表采用系统字节序
-    wanted_spec.channels = is->p_acodec_ctx->ch_layout.nb_channels;  // 声音通道数
+    wanted_spec.channels = is->acodec_ctx->ch_layout.nb_channels;  // 声音通道数
     wanted_spec.silence = 0;                            // 静音值
     // wanted_spec.samples = SDL_AUDIO_BUFFER_SIZE;     // SDL声音缓冲区尺寸，单位是单声道采样点尺寸x通道数
     // SDL声音缓冲区尺寸，单位是单声道采样点尺寸x声道数
