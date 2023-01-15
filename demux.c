@@ -138,7 +138,7 @@ static int demux_thread(void *arg)
         ret = av_read_frame(is->p_fmt_ctx, pkt);
         if (ret < 0)
         {
-            if ((ret == AVERROR_EOF))// || avio_feof(ic->pb)) && !is->eof)
+            if (ret == AVERROR_EOF) // || avio_feof(ic->pb)) && !is->eof)
             {
                 // 输入文件已读完，则往packet队列中发送NULL packet，以冲洗(flush)解码器，否则解码器中缓存的帧取不出来
                 if (is->video_idx >= 0)

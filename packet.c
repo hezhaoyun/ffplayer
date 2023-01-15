@@ -23,14 +23,14 @@ int packet_queue_init(packet_queue_t *q)
 // 写队列尾部。pkt是一包还未解码的音频数据
 int packet_queue_put(packet_queue_t *q, AVPacket *pkt)
 {
-    AVPacketList *pkt_list;
+    MyAVPacketList *pkt_list;
     
     if (av_packet_make_refcounted(pkt) < 0)
     {
         printf("[pkt] is not refrence counted\n");
         return -1;
     }
-    pkt_list = av_malloc(sizeof(AVPacketList));
+    pkt_list = av_malloc(sizeof(MyAVPacketList));
     if (!pkt_list)
     {
         return -1;
@@ -62,7 +62,7 @@ int packet_queue_put(packet_queue_t *q, AVPacket *pkt)
 // 读队列头部。
 int packet_queue_get(packet_queue_t *q, AVPacket *pkt, int block)
 {
-    AVPacketList *p_pkt_node;
+    MyAVPacketList *p_pkt_node;
     int ret;
 
     SDL_LockMutex(q->mutex);
@@ -101,7 +101,7 @@ int packet_queue_get(packet_queue_t *q, AVPacket *pkt, int block)
 int packet_queue_put_nullpacket(packet_queue_t *q, int stream_index)
 {
     AVPacket pkt1, *pkt = &pkt1;
-    av_init_packet(pkt);
+    // av_init_packet(pkt);
     pkt->data = NULL;
     pkt->size = 0;
     pkt->stream_index = stream_index;
@@ -110,7 +110,7 @@ int packet_queue_put_nullpacket(packet_queue_t *q, int stream_index)
 
 void packet_queue_flush(packet_queue_t *q)
 {
-    AVPacketList *pkt, *pkt1;
+    MyAVPacketList *pkt, *pkt1;
 
     SDL_LockMutex(q->mutex);
     for (pkt = q->first_pkt; pkt; pkt = pkt1) {

@@ -69,8 +69,7 @@ typedef struct {
 
 typedef struct {
     int freq;
-    int channels;
-    int64_t channel_layout;
+    AVChannelLayout ch_layout;
     enum AVSampleFormat fmt;
     int frame_size;
     int bytes_per_sec;
@@ -83,8 +82,13 @@ typedef struct {
     SDL_Rect rect;
 }   sdl_video_t;
 
+typedef struct MyAVPacketList {
+    AVPacket pkt;
+    struct MyAVPacketList *next;
+} MyAVPacketList;
+
 typedef struct packet_queue_t {
-    AVPacketList *first_pkt, *last_pkt;
+    MyAVPacketList *first_pkt, *last_pkt;
     int nb_packets;                 // 队列中packet的数量
     int size;                       // 队列所占内存空间大小
     int64_t duration;               // 队列中所有packet总的播放时长

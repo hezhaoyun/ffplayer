@@ -466,18 +466,15 @@ static int open_video_playing(void *arg)
 
 static int open_video_stream(player_stat_t *is)
 {
-    AVCodecParameters* p_codec_par = NULL;
-    AVCodec* p_codec = NULL;
-    AVCodecContext* p_codec_ctx = NULL;
     AVStream *p_stream = is->p_video_stream;
     int ret;
 
     // 1. 为视频流构建解码器AVCodecContext
     // 1.1 获取解码器参数AVCodecParameters
-    p_codec_par = p_stream->codecpar;
+    AVCodecParameters* p_codec_par = p_stream->codecpar;
 
     // 1.2 获取解码器
-    p_codec = avcodec_find_decoder(p_codec_par->codec_id);
+    const AVCodec* p_codec = avcodec_find_decoder(p_codec_par->codec_id);
     if (p_codec == NULL)
     {
         printf("Cann't find codec!\n");
@@ -486,7 +483,7 @@ static int open_video_stream(player_stat_t *is)
 
     // 1.3 构建解码器AVCodecContext
     // 1.3.1 p_codec_ctx初始化：分配结构体，使用p_codec初始化相应成员为默认值
-    p_codec_ctx = avcodec_alloc_context3(p_codec);
+    AVCodecContext* p_codec_ctx = avcodec_alloc_context3(p_codec);
     if (p_codec_ctx == NULL)
     {
         printf("avcodec_alloc_context3() failed\n");
