@@ -133,13 +133,11 @@ the_end:
 
 int open_audio_stream(PlayerState *is)
 {
-    AVCodecContext *codec_ctx;
-    int ret;
-
     // 1. 为音频流构建解码器AVCodecContext
 
     // 1.1 获取解码器参数AVCodecParameters
     AVCodecParameters *codec_par = is->audio_stream->codecpar;
+    
     // 1.2 获取解码器
     const AVCodec *codec = avcodec_find_decoder(codec_par->codec_id);
     if (codec == NULL)
@@ -150,19 +148,21 @@ int open_audio_stream(PlayerState *is)
 
     // 1.3 构建解码器AVCodecContext
     // 1.3.1 codec_ctx初始化：分配结构体，使用codec初始化相应成员为默认值
-    codec_ctx = avcodec_alloc_context3(codec);
+    AVCodecContext *codec_ctx = avcodec_alloc_context3(codec);
     if (codec_ctx == NULL)
     {
         av_log(NULL, AV_LOG_ERROR, "avcodec_alloc_context3() failed\n");
         return -1;
     }
+
     // 1.3.2 codec_ctx初始化：codec_par ==> codec_ctx，初始化相应成员
-    ret = avcodec_parameters_to_context(codec_ctx, codec_par);
+    int ret = avcodec_parameters_to_context(codec_ctx, codec_par);
     if (ret < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "avcodec_parameters_to_context() failed %d\n", ret);
         return -1;
     }
+    
     // 1.3.3 codec_ctx初始化：使用codec初始化codec_ctx，初始化完成
     ret = avcodec_open2(codec_ctx, codec, NULL);
     if (ret < 0)

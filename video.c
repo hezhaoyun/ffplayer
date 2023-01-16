@@ -22,9 +22,6 @@ static int queue_picture(PlayerState *is, AVFrame *src_frame, double pts, double
     vp->pts = pts;
     vp->duration = duration;
     vp->pos = pos;
-    // vp->serial = serial;
-
-    // set_default_window_size(vp->width, vp->height, vp->sar);
 
     // 将AVFrame拷入队列相应位置
     av_frame_move_ref(vp->frame, src_frame);
@@ -111,31 +108,30 @@ static int video_decode_frame(AVCodecContext *codec_ctx, PacketQueue *pkt_queue,
 static int video_decode_thread(void *arg)
 {
     PlayerState *is = (PlayerState *)arg;
-    AVFrame *frame = av_frame_alloc();
-    double pts;
-    double duration;
-    int ret;
-    int got_picture;
     AVRational tb = is->video_stream->time_base;
-    AVRational frame_rate = av_guess_frame_rate(is->fmt_ctx, is->video_stream, NULL);
 
+    AVFrame *frame = av_frame_alloc();
     if (frame == NULL)
     {
         av_log(NULL, AV_LOG_ERROR, "av_frame_alloc() for frame failed\n");
         return AVERROR(ENOMEM);
     }
 
+    AVRational frame_rate = av_guess_frame_rate(is->fmt_ctx, is->video_stream, NULL);
+
     while (1)
     {
-        got_picture = video_decode_frame(is->vcodec_ctx, &is->video_pkt_queue, frame);
+        int got_picture = video_decode_frame(is->vcodec_ctx, &is->video_pkt_queue, frame);
         if (got_picture < 0)
         {
             goto exit;
         }
 
-        duration = (frame_rate.num && frame_rate.den ? av_q2d((AVRational){frame_rate.den, frame_rate.num}) : 0); // 当前帧播放时长
-        pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);                                 // 当前帧显示时间戳
-        ret = queue_picture(is, frame, pts, duration, frame->pkt_pos);                                        // 将当前帧压入frame_queue
+        double duration = (frame_rate.num && frame_rate.den ? av_q2d((AVRational){frame_rate.den, frame_rate.num}) : 0); // 当前帧播放时长
+        double pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);                                     // 当前帧显示时间戳
+
+        int ret = queue_picture(is, frame, pts, duration, frame->pkt_pos); // 将当前帧压入frame_queue
+
         av_frame_unref(frame);
 
         if (ret < 0)
@@ -271,7 +267,7 @@ static void video_display(PlayerState *is)
 static void video_refresh(void *opaque, double *remaining_time)
 {
     PlayerState *is = (PlayerState *)opaque;
-    double time;
+
     static bool first_frame = true;
 
 retry:
@@ -281,12 +277,9 @@ retry:
         return;
     }
 
-    double last_duration, duration, delay;
-    Frame *vp, *lastvp;
-
     /* dequeue the picture */
-    lastvp = frame_queue_peek_last(&is->video_frm_queue); // 上一帧：上次已显示的帧
-    vp = frame_queue_peek(&is->video_frm_queue);          // 当前帧：当前待显示的帧
+    Frame *lastvp = frame_queue_peek_last(&is->video_frm_queue); // 上一帧：上次已显示的帧
+    Frame *vp = frame_queue_peek(&is->video_frm_queue);          // 当前帧：当前待显示的帧
 
     // lastvp和vp不是同一播放序列(一个seek会开始一个新播放序列)，将frame_timer更新为当前时间
     if (first_frame)
@@ -302,21 +295,24 @@ retry:
     }
 
     /* compute nominal last_duration */
-    last_duration = vp_duration(is, lastvp, vp);     // 上一帧播放时长：vp->pts - lastvp->pts
-    delay = compute_target_delay(last_duration, is); // 根据视频时钟和同步时钟的差值，计算delay值
+    double last_duration = vp_duration(is, lastvp, vp);     // 上一帧播放时长：vp->pts - lastvp->pts
+    double delay = compute_target_delay(last_duration, is); // 根据视频时钟和同步时钟的差值，计算delay值
 
-    time = av_gettime_relative() / 1000000.0;
+    double time = av_gettime_relative() / 1000000.0;
+
     // 当前帧播放时刻(is->frame_timer+delay)大于当前时刻(time)，表示播放时刻未到
     if (time < is->frame_timer + delay)
     {
         // 播放时刻未到，则更新刷新时间remaining_time为当前时刻到下一播放时刻的时间差
         *remaining_time = FFMIN(is->frame_timer + delay - time, *remaining_time);
+
         // 播放时刻未到，则不播放，直接返回
         return;
     }
 
     // 更新frame_timer值
     is->frame_timer += delay;
+
     // 校正frame_timer值：若frame_timer落后于当前系统时间太久(超过最大同步域值)，则更新为当前系统时间
     if (delay > 0 && time - is->frame_timer > AV_SYNC_THRESHOLD_MAX)
     {
@@ -334,7 +330,8 @@ retry:
     if (frame_queue_nb_remaining(&is->video_frm_queue) > 1) // 队列中未显示帧数>1(只有一帧则不考虑丢帧)
     {
         Frame *nextvp = frame_queue_peek_next(&is->video_frm_queue); // 下一帧：下一待显示的帧
-        duration = vp_duration(is, vp, nextvp);                      // 当前帧vp播放时长 = nextvp->pts - vp->pts
+        double duration = vp_duration(is, vp, nextvp);               // 当前帧vp播放时长 = nextvp->pts - vp->pts
+       
         // 当前帧vp未能及时播放，即下一帧播放时刻(is->frame_timer+duration)小于当前系统时刻(time)
         if (time > is->frame_timer + duration)
         {
@@ -353,6 +350,7 @@ display:
 static int video_playing_thread(void *arg)
 {
     PlayerState *is = (PlayerState *)arg;
+
     double remaining_time = 0.0;
 
     while (1)
@@ -374,9 +372,6 @@ static int video_playing_thread(void *arg)
 static int open_video_playing(void *arg)
 {
     PlayerState *is = (PlayerState *)arg;
-    int ret;
-    int buf_size;
-    uint8_t *buffer = NULL;
 
     is->frm_yuv = av_frame_alloc();
     if (is->frm_yuv == NULL)
@@ -386,26 +381,26 @@ static int open_video_playing(void *arg)
     }
 
     // 为AVFrame.*data[]手工分配缓冲区，用于存储sws_scale()中目的帧视频数据
-    buf_size = av_image_get_buffer_size(AV_PIX_FMT_YUV420P,
-                                        is->vcodec_ctx->width,
-                                        is->vcodec_ctx->height,
-                                        1);
+    int buf_size = av_image_get_buffer_size(AV_PIX_FMT_YUV420P,
+                                            is->vcodec_ctx->width,
+                                            is->vcodec_ctx->height,
+                                            1);
     // buffer将作为frm_yuv的视频数据缓冲区
-    buffer = (uint8_t *)av_malloc(buf_size);
+    uint8_t *buffer = (uint8_t *)av_malloc(buf_size);
     if (buffer == NULL)
     {
         printf("av_malloc() for buffer failed\n");
         return -1;
     }
+
     // 使用给定参数设定frm_yuv->data和frm_yuv->linesize
-    ret = av_image_fill_arrays(is->frm_yuv->data,      // dst data[]
-                               is->frm_yuv->linesize,  // dst linesize[]
-                               buffer,                 // src buffer
-                               AV_PIX_FMT_YUV420P,     // pixel format
-                               is->vcodec_ctx->width,  // width
-                               is->vcodec_ctx->height, // height
-                               1                       // align
-    );
+    int ret = av_image_fill_arrays(is->frm_yuv->data,      // dst data[]
+                                   is->frm_yuv->linesize,  // dst linesize[]
+                                   buffer,                 // src buffer
+                                   AV_PIX_FMT_YUV420P,     // pixel format
+                                   is->vcodec_ctx->width,  // width
+                                   is->vcodec_ctx->height, // height
+                                   1);                     // align
 
     if (ret < 0)
     {
@@ -428,8 +423,7 @@ static int open_video_playing(void *arg)
                                          SWS_BICUBIC,             // flags
                                          NULL,                    // src filter
                                          NULL,                    // dst filter
-                                         NULL                     // param
-    );
+                                         NULL);                   // param
 
     if (is->img_convert_ctx == NULL)
     {
@@ -509,7 +503,7 @@ static int open_video_stream(PlayerState *is)
         printf("avcodec_alloc_context3() failed\n");
         return -1;
     }
-    
+
     // 1.3.2 codec_ctx初始化：codec_par ==> codec_ctx，初始化相应成员
     ret = avcodec_parameters_to_context(codec_ctx, codec_par);
     if (ret < 0)
