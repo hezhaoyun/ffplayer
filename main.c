@@ -10,6 +10,7 @@ int main(int argc, char *argv[])
         printf("./ffplayer ring.mp4\n");
         return -1;
     }
+    
     printf("Try playing %s ...\n", argv[1]);
     player_running(argv[1]);
 

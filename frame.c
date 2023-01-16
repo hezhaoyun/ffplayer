@@ -10,31 +10,39 @@ int frame_queue_init(FrameQueue *f, PacketQueue *pktq, int max_size, int keep_la
 {
     int i;
     memset(f, 0, sizeof(FrameQueue));
-    if (!(f->mutex = SDL_CreateMutex())) {
+
+    if (!(f->mutex = SDL_CreateMutex()))
+    {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
         return AVERROR(ENOMEM);
     }
-    if (!(f->cond = SDL_CreateCond())) {
+
+    if (!(f->cond = SDL_CreateCond()))
+    {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
         return AVERROR(ENOMEM);
     }
+
     f->pktq = pktq;
     f->max_size = FFMIN(max_size, FRAME_QUEUE_SIZE);
     f->keep_last = !!keep_last;
+
     for (i = 0; i < f->max_size; i++)
         if (!(f->queue[i].frame = av_frame_alloc()))
             return AVERROR(ENOMEM);
+
     return 0;
 }
 
 void frame_queue_destory(FrameQueue *f)
 {
-    int i;
-    for (i = 0; i < f->max_size; i++) {
+    for (int i = 0; i < f->max_size; i++)
+    {
         Frame *vp = &f->queue[i];
         frame_queue_unref_item(vp);
         av_frame_free(&vp->frame);
     }
+
     SDL_DestroyMutex(f->mutex);
     SDL_DestroyCond(f->cond);
 }
@@ -68,7 +76,8 @@ Frame *frame_queue_peek_writable(FrameQueue *f)
     /* wait until we have space to put a new frame */
     SDL_LockMutex(f->mutex);
     while (f->size >= f->max_size &&
-           !f->pktq->abort_request) {
+           !f->pktq->abort_request)
+    {
         SDL_CondWait(f->cond, f->mutex);
     }
     SDL_UnlockMutex(f->mutex);
@@ -84,10 +93,13 @@ Frame *frame_queue_peek_readable(FrameQueue *f)
 {
     /* wait until we have a readable a new frame */
     SDL_LockMutex(f->mutex);
+    
     while (f->size - f->rindex_shown <= 0 &&
-           !f->pktq->abort_request) {
+           !f->pktq->abort_request)
+    {
         SDL_CondWait(f->cond, f->mutex);
     }
+
     SDL_UnlockMutex(f->mutex);
 
     if (f->pktq->abort_request)
@@ -110,7 +122,8 @@ void frame_queue_push(FrameQueue *f)
 // 读指针(rindex)指向的帧已显示，删除此帧，注意不读取直接删除。读指针加1
 void frame_queue_next(FrameQueue *f)
 {
-    if (f->keep_last && !f->rindex_shown) {
+    if (f->keep_last && !f->rindex_shown)
+    {
         f->rindex_shown = 1;
         return;
     }
@@ -139,4 +152,3 @@ int64_t frame_queue_last_pos(FrameQueue *f)
     else
         return -1;
 }
-

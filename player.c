@@ -5,7 +5,7 @@
  *   2018-11-27 - [lei]     Create file: a simplest ffmpeg player
  *   2018-12-01 - [lei]     Playing audio
  *   2018-12-06 - [lei]     Playing audio&vidio
- *   2019-01-06 - [lei]     Add audio resampling, fix bug of unsupported audio 
+ *   2019-01-06 - [lei]     Add audio resampling, fix bug of unsupported audio
  *                          format(such as planar)
  *   2019-01-16 - [lei]     Sync video to audio.
  *
@@ -33,12 +33,16 @@ static int player_deinit(PlayerState *is);
 // 返回值：返回上一帧的pts更新值(上一帧pts+流逝的时间)
 double get_clock(PlayerClock *c)
 {
-    if (!c) return NAN;
-    
+    if (!c)
+    {
+        return NAN;
+    }
+
     if (*c->queue_serial != c->serial)
     {
         return NAN;
     }
+
     if (c->paused)
     {
         return c->pts;
@@ -46,7 +50,7 @@ double get_clock(PlayerClock *c)
     else
     {
         double time = av_gettime_relative() / 1000000.0;
-        double ret = c->pts_drift + time;   // 展开得： c->pts + (time - c->last_updated)
+        double ret = c->pts_drift + time; // 展开得： c->pts + (time - c->last_updated)
         return ret;
     }
 }
@@ -81,10 +85,12 @@ void init_clock(PlayerClock *c, int *queue_serial)
 
 static void sync_play_clock_to_slave(PlayerClock *c, PlayerClock *slave)
 {
-    double clock = get_clock(c);
-    double slave_clock = get_clock(slave);
+    double clock = get_clock(c), slave_clock = get_clock(slave);
+
     if (!isnan(slave_clock) && (isnan(clock) || fabs(clock - slave_clock) > AV_NOSYNC_THRESHOLD))
+    {
         set_clock(c, slave_clock, slave->serial);
+    }
 }
 
 static void do_exit(PlayerState *is)
@@ -95,10 +101,15 @@ static void do_exit(PlayerState *is)
     }
 
     if (is->sdl_video.renderer)
+    {
         SDL_DestroyRenderer(is->sdl_video.renderer);
+    }
+
     if (is->sdl_video.window)
+    {
         SDL_DestroyWindow(is->sdl_video.window);
-    
+    }
+
     avformat_network_deinit();
 
     SDL_Quit();
@@ -143,7 +154,7 @@ static PlayerState *player_init(const char *input_file)
     if (!(is->continue_read_thread = SDL_CreateCond()))
     {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
-fail:
+    fail:
         player_deinit(is);
         return NULL;
     }
@@ -163,7 +174,6 @@ fail:
     return is;
 }
 
-
 static int player_deinit(PlayerState *is)
 {
     /* XXX: use a special url_shutdown call to abort parse cleanly */
@@ -173,11 +183,11 @@ static int player_deinit(PlayerState *is)
     /* close each stream */
     if (is->audio_idx >= 0)
     {
-        //stream_component_close(is, is->audio_stream);
+        // stream_component_close(is, is->audio_stream);
     }
     if (is->video_idx >= 0)
     {
-        //stream_component_close(is, is->video_stream);
+        // stream_component_close(is, is->video_stream);
     }
 
     avformat_close_input(&is->fmt_ctx);
@@ -249,7 +259,8 @@ int player_running(const char *input_file)
             SDL_PumpEvents();
         }
 
-        switch (event.type) {
+        switch (event.type)
+        {
         case SDL_KEYDOWN:
             if (event.key.keysym.sym == SDLK_ESCAPE)
             {
@@ -257,8 +268,9 @@ int player_running(const char *input_file)
                 break;
             }
 
-            switch (event.key.keysym.sym) {
-            case SDLK_SPACE:        // 空格键：暂停
+            switch (event.key.keysym.sym)
+            {
+            case SDLK_SPACE: // 空格键：暂停
                 toggle_pause(is);
                 break;
             case SDL_WINDOWEVENT:
