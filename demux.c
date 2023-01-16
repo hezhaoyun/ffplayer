@@ -35,7 +35,7 @@ static int demux_init(PlayerState *is)
 
     is->fmt_ctx = fmt_ctx;
 
-    // 1.2 搜索流信息：读取一段视频文件数据，尝试解码，将取到的流信息填入p_fmt_ctx->streams
+    // 1.2 搜索流信息：读取一段视频文件数据，尝试解码，将取到的流信息填入fmt_ctx->streams
     //     ic->streams是一个指针数组，数组大小是pFormatCtx->nb_streams
     err = avformat_find_stream_info(fmt_ctx, NULL);
     if (err < 0)
@@ -109,7 +109,6 @@ static int stream_has_enough_packets(AVStream *st, int stream_id, PacketQueue *q
 static int demux_thread(void *arg)
 {
     PlayerState *is = (PlayerState *)arg;
-    AVFormatContext *fmt_ctx = is->fmt_ctx;
     int ret;
     AVPacket pkt1, *pkt = &pkt1;
 
@@ -187,6 +186,7 @@ static int demux_thread(void *arg)
     }
 
     SDL_DestroyMutex(wait_mutex);
+
     return 0;
 }
 

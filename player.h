@@ -88,7 +88,7 @@ typedef struct AVPacketToken {
 } AVPacketToken;
 
 typedef struct PacketQueue {
-    AVPacketToken *first_pkt, *last_pkt;
+    AVPacketToken *first, *last;
     int nb_packets;                 // 队列中packet的数量
     int size;                       // 队列所占内存空间大小
     int64_t duration;               // 队列中所有packet总的播放时长
@@ -172,7 +172,7 @@ typedef struct PlayerState {
 
 }   PlayerState;
 
-int player_running(const char *p_input_file);
+int player_running(const char *input_file);
 double get_clock(PlayerClock *c);
 void set_clock_at(PlayerClock *c, double pts, int serial, double time);
 void set_clock(PlayerClock *c, double pts, int serial);

@@ -26,7 +26,7 @@ int packet_queue_init(PacketQueue *q)
 // 写队列尾部。pkt是一包还未解码的音频数据
 int packet_queue_put(PacketQueue *q, AVPacket *pkt)
 {
-    AVPacketToken *pkt_list;
+    AVPacketToken *token;
 
     if (av_packet_make_refcounted(pkt) < 0)
     {
@@ -34,29 +34,29 @@ int packet_queue_put(PacketQueue *q, AVPacket *pkt)
         return -1;
     }
 
-    pkt_list = av_malloc(sizeof(AVPacketToken));
-    if (!pkt_list)
+    token = av_malloc(sizeof(AVPacketToken));
+    if (!token)
     {
         return -1;
     }
 
-    pkt_list->pkt = *pkt;
-    pkt_list->next = NULL;
+    token->pkt = *pkt;
+    token->next = NULL;
 
     SDL_LockMutex(q->mutex);
 
-    if (!q->last_pkt) // 队列为空
+    if (!q->last) // 队列为空
     {
-        q->first_pkt = pkt_list;
+        q->first = token;
     }
     else
     {
-        q->last_pkt->next = pkt_list;
+        q->last->next = token;
     }
 
-    q->last_pkt = pkt_list;
+    q->last = token;
     q->nb_packets++;
-    q->size += pkt_list->pkt.size;
+    q->size += token->pkt.size;
 
     // 发个条件变量的信号：重启等待q->cond条件变量的一个线程
     SDL_CondSignal(q->cond);
@@ -69,27 +69,30 @@ int packet_queue_put(PacketQueue *q, AVPacket *pkt)
 // 读队列头部。
 int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
 {
-    AVPacketToken *p_pkt_node;
+    AVPacketToken *token;
     int ret;
 
     SDL_LockMutex(q->mutex);
 
     while (1)
     {
-        p_pkt_node = q->first_pkt;
+        token = q->first;
 
-        if (p_pkt_node) // 队列非空，取一个出来
+        if (token) // 队列非空，取一个出来
         {
-            q->first_pkt = p_pkt_node->next;
-            if (!q->first_pkt)
+            q->first = token->next;
+            if (!q->first)
             {
-                q->last_pkt = NULL;
+                q->last = NULL;
             }
+            
             q->nb_packets--;
-            q->size -= p_pkt_node->pkt.size;
-            *pkt = p_pkt_node->pkt;
-            av_free(p_pkt_node);
+            q->size -= token->pkt.size;
+            *pkt = token->pkt;
+
+            av_free(token);
             ret = 1;
+            
             break;
         }
         else if (!block) // 队列空且阻塞标志无效，则立即退出
@@ -124,7 +127,7 @@ void packet_queue_flush(PacketQueue *q)
 
     SDL_LockMutex(q->mutex);
 
-    for (pkt = q->first_pkt; pkt; pkt = pkt1)
+    for (pkt = q->first; pkt; pkt = pkt1)
     {
         pkt1 = pkt->next;
 
@@ -136,8 +139,8 @@ void packet_queue_flush(PacketQueue *q)
         av_freep(&pkt);
     }
 
-    q->last_pkt = NULL;
-    q->first_pkt = NULL;
+    q->last = NULL;
+    q->first = NULL;
     q->nb_packets = 0;
     q->size = 0;
     q->duration = 0;

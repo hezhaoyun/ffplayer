@@ -36,7 +36,7 @@ static int queue_picture(PlayerState *is, AVFrame *src_frame, double pts, double
 }
 
 // 从packet_queue中取一个packet，解码生成frame
-static int video_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_queue, AVFrame *frame)
+static int video_decode_frame(AVCodecContext *codec_ctx, PacketQueue *pkt_queue, AVFrame *frame)
 {
     int ret;
 
@@ -51,13 +51,13 @@ static int video_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
             //     解码器缓存一定数量的packet后，才有解码后的frame输出
             //     frame输出顺序是按pts的顺序，如IBBPBBP
             //     frame->pkt_pos变量是此frame对应的packet在视频文件中的偏移地址，值同pkt.pos
-            ret = avcodec_receive_frame(p_codec_ctx, frame);
+            ret = avcodec_receive_frame(codec_ctx, frame);
             if (ret < 0)
             {
                 if (ret == AVERROR_EOF)
                 {
                     av_log(NULL, AV_LOG_INFO, "video avcodec_receive_frame(): the decoder has been fully flushed\n");
-                    avcodec_flush_buffers(p_codec_ctx);
+                    avcodec_flush_buffers(codec_ctx);
                     return 0;
                 }
                 else if (ret == AVERROR(EAGAIN))
@@ -82,7 +82,7 @@ static int video_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
         }
 
         // 1. 取出一个packet。使用pkt对应的serial赋值给d->pkt_serial
-        if (packet_queue_get(p_pkt_queue, &pkt, true) < 0)
+        if (packet_queue_get(pkt_queue, &pkt, true) < 0)
         {
             return -1;
         }
@@ -90,14 +90,14 @@ static int video_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
         if (pkt.data == NULL)
         {
             // 复位解码器内部状态/刷新内部缓冲区。
-            avcodec_flush_buffers(p_codec_ctx);
+            avcodec_flush_buffers(codec_ctx);
         }
         else
         {
             // 2. 将packet发送给解码器
             //    发送packet的顺序是按dts递增的顺序，如IPBBPBB
             //    pkt.pos变量可以标识当前packet在视频文件中的地址偏移
-            if (avcodec_send_packet(p_codec_ctx, &pkt) == AVERROR(EAGAIN))
+            if (avcodec_send_packet(codec_ctx, &pkt) == AVERROR(EAGAIN))
             {
                 av_log(NULL, AV_LOG_ERROR, "receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
             }
@@ -111,7 +111,7 @@ static int video_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
 static int video_decode_thread(void *arg)
 {
     PlayerState *is = (PlayerState *)arg;
-    AVFrame *p_frame = av_frame_alloc();
+    AVFrame *frame = av_frame_alloc();
     double pts;
     double duration;
     int ret;
@@ -119,24 +119,24 @@ static int video_decode_thread(void *arg)
     AVRational tb = is->video_stream->time_base;
     AVRational frame_rate = av_guess_frame_rate(is->fmt_ctx, is->video_stream, NULL);
 
-    if (p_frame == NULL)
+    if (frame == NULL)
     {
-        av_log(NULL, AV_LOG_ERROR, "av_frame_alloc() for p_frame failed\n");
+        av_log(NULL, AV_LOG_ERROR, "av_frame_alloc() for frame failed\n");
         return AVERROR(ENOMEM);
     }
 
     while (1)
     {
-        got_picture = video_decode_frame(is->vcodec_ctx, &is->video_pkt_queue, p_frame);
+        got_picture = video_decode_frame(is->vcodec_ctx, &is->video_pkt_queue, frame);
         if (got_picture < 0)
         {
             goto exit;
         }
 
         duration = (frame_rate.num && frame_rate.den ? av_q2d((AVRational){frame_rate.den, frame_rate.num}) : 0); // 当前帧播放时长
-        pts = (p_frame->pts == AV_NOPTS_VALUE) ? NAN : p_frame->pts * av_q2d(tb);                                 // 当前帧显示时间戳
-        ret = queue_picture(is, p_frame, pts, duration, p_frame->pkt_pos);                                        // 将当前帧压入frame_queue
-        av_frame_unref(p_frame);
+        pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);                                 // 当前帧显示时间戳
+        ret = queue_picture(is, frame, pts, duration, frame->pkt_pos);                                        // 将当前帧压入frame_queue
+        av_frame_unref(frame);
 
         if (ret < 0)
         {
@@ -145,7 +145,7 @@ static int video_decode_thread(void *arg)
     }
 
 exit:
-    av_frame_free(&p_frame);
+    av_frame_free(&frame);
 
     return 0;
 }
@@ -227,7 +227,7 @@ static void video_display(PlayerState *is)
 
     vp = frame_queue_peek_last(&is->video_frm_queue);
 
-    // 图像转换：p_frm_raw->data ==> frm_yuv->data
+    // 图像转换：frm_raw->data ==> frm_yuv->data
     // 将源图像中一片连续的区域经过处理后更新到目标图像对应区域，处理的图像区域必须逐行连续
     // plane: 如YUV有Y、U、V三个plane，RGB有R、G、B三个plane
     // slice: 图像中一片连续的行，必须是连续的，顺序由顶部到底部或由底部到顶部
@@ -381,7 +381,7 @@ static int open_video_playing(void *arg)
     is->frm_yuv = av_frame_alloc();
     if (is->frm_yuv == NULL)
     {
-        printf("av_frame_alloc() for p_frm_raw failed\n");
+        printf("av_frame_alloc() for frm_raw failed\n");
         return -1;
     }
 
@@ -390,14 +390,14 @@ static int open_video_playing(void *arg)
                                         is->vcodec_ctx->width,
                                         is->vcodec_ctx->height,
                                         1);
-    // buffer将作为p_frm_yuv的视频数据缓冲区
+    // buffer将作为frm_yuv的视频数据缓冲区
     buffer = (uint8_t *)av_malloc(buf_size);
     if (buffer == NULL)
     {
         printf("av_malloc() for buffer failed\n");
         return -1;
     }
-    // 使用给定参数设定p_frm_yuv->data和p_frm_yuv->linesize
+    // 使用给定参数设定frm_yuv->data和frm_yuv->linesize
     ret = av_image_fill_arrays(is->frm_yuv->data,      // dst data[]
                                is->frm_yuv->linesize,  // dst linesize[]
                                buffer,                 // src buffer
@@ -486,47 +486,47 @@ static int open_video_playing(void *arg)
 
 static int open_video_stream(PlayerState *is)
 {
-    AVStream *p_stream = is->video_stream;
+    AVStream *stream = is->video_stream;
     int ret;
 
     // 1. 为视频流构建解码器AVCodecContext
     // 1.1 获取解码器参数AVCodecParameters
-    AVCodecParameters *p_codec_par = p_stream->codecpar;
+    AVCodecParameters *codec_par = stream->codecpar;
 
     // 1.2 获取解码器
-    const AVCodec *p_codec = avcodec_find_decoder(p_codec_par->codec_id);
-    if (p_codec == NULL)
+    const AVCodec *codec = avcodec_find_decoder(codec_par->codec_id);
+    if (codec == NULL)
     {
         printf("Cann't find codec!\n");
         return -1;
     }
 
     // 1.3 构建解码器AVCodecContext
-    // 1.3.1 p_codec_ctx初始化：分配结构体，使用p_codec初始化相应成员为默认值
-    AVCodecContext *p_codec_ctx = avcodec_alloc_context3(p_codec);
-    if (p_codec_ctx == NULL)
+    // 1.3.1 codec_ctx初始化：分配结构体，使用codec初始化相应成员为默认值
+    AVCodecContext *codec_ctx = avcodec_alloc_context3(codec);
+    if (codec_ctx == NULL)
     {
         printf("avcodec_alloc_context3() failed\n");
         return -1;
     }
     
-    // 1.3.2 p_codec_ctx初始化：p_codec_par ==> p_codec_ctx，初始化相应成员
-    ret = avcodec_parameters_to_context(p_codec_ctx, p_codec_par);
+    // 1.3.2 codec_ctx初始化：codec_par ==> codec_ctx，初始化相应成员
+    ret = avcodec_parameters_to_context(codec_ctx, codec_par);
     if (ret < 0)
     {
         printf("avcodec_parameters_to_context() failed\n");
         return -1;
     }
 
-    // 1.3.3 p_codec_ctx初始化：使用p_codec初始化p_codec_ctx，初始化完成
-    ret = avcodec_open2(p_codec_ctx, p_codec, NULL);
+    // 1.3.3 codec_ctx初始化：使用codec初始化codec_ctx，初始化完成
+    ret = avcodec_open2(codec_ctx, codec, NULL);
     if (ret < 0)
     {
         printf("avcodec_open2() failed %d\n", ret);
         return -1;
     }
 
-    is->vcodec_ctx = p_codec_ctx;
+    is->vcodec_ctx = codec_ctx;
 
     // 2. 创建视频解码线程
     SDL_CreateThread(video_decode_thread, "video decode thread", is);

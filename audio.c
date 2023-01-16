@@ -5,7 +5,7 @@
 static void sdl_audio_callback(void *opaque, Uint8 *stream, int len);
 
 // 从packet_queue中取一个packet，解码生成frame
-static int audio_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_queue, AVFrame *frame)
+static int audio_decode_frame(AVCodecContext *codec_ctx, PacketQueue *pkt_queue, AVFrame *frame)
 {
     int ret;
 
@@ -21,14 +21,14 @@ static int audio_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
             // 3.2 一个音频packet含一至多个音频frame，每次avcodec_receive_frame()返回一个frame，此函数返回。
             // 下次进来此函数，继续获取一个frame，直到avcodec_receive_frame()返回AVERROR(EAGAIN)，
             // 表示解码器需要填入新的音频packet
-            ret = avcodec_receive_frame(p_codec_ctx, frame);
+            ret = avcodec_receive_frame(codec_ctx, frame);
             if (ret >= 0)
             {
                 // 时基转换，从d->avctx->pkt_timebase时基转换到1/frame->sample_rate时基
                 AVRational tb = (AVRational){1, frame->sample_rate};
                 if (frame->pts != AV_NOPTS_VALUE)
                 {
-                    frame->pts = av_rescale_q(frame->pts, p_codec_ctx->pkt_timebase, tb);
+                    frame->pts = av_rescale_q(frame->pts, codec_ctx->pkt_timebase, tb);
                 }
                 else
                 {
@@ -40,7 +40,7 @@ static int audio_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
             else if (ret == AVERROR_EOF)
             {
                 av_log(NULL, AV_LOG_INFO, "audio avcodec_receive_frame(): the decoder has been flushed\n");
-                avcodec_flush_buffers(p_codec_ctx);
+                avcodec_flush_buffers(codec_ctx);
                 return 0;
             }
             else if (ret == AVERROR(EAGAIN))
@@ -56,7 +56,7 @@ static int audio_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
         }
 
         // 1. 取出一个packet。使用pkt对应的serial赋值给d->pkt_serial
-        if (packet_queue_get(p_pkt_queue, &pkt, true) < 0)
+        if (packet_queue_get(pkt_queue, &pkt, true) < 0)
         {
             return -1;
         }
@@ -65,14 +65,14 @@ static int audio_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
         if (pkt.data == NULL)
         {
             // 复位解码器内部状态/刷新内部缓冲区。当seek操作或切换流时应调用此函数。
-            avcodec_flush_buffers(p_codec_ctx);
+            avcodec_flush_buffers(codec_ctx);
         }
         else
         {
             // 2. 将packet发送给解码器
             //    发送packet的顺序是按dts递增的顺序，如IPBBPBB
             //    pkt.pos变量可以标识当前packet在视频文件中的地址偏移
-            if (avcodec_send_packet(p_codec_ctx, &pkt) == AVERROR(EAGAIN))
+            if (avcodec_send_packet(codec_ctx, &pkt) == AVERROR(EAGAIN))
             {
                 av_log(NULL, AV_LOG_ERROR, "receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
             }
@@ -86,21 +86,21 @@ static int audio_decode_frame(AVCodecContext *p_codec_ctx, PacketQueue *p_pkt_qu
 static int audio_decode_thread(void *arg)
 {
     PlayerState *is = (PlayerState *)arg;
-    AVFrame *p_frame = av_frame_alloc();
+    AVFrame *frame = av_frame_alloc();
     Frame *af;
 
     int got_frame = 0;
     AVRational tb;
     int ret = 0;
 
-    if (p_frame == NULL)
+    if (frame == NULL)
     {
         return AVERROR(ENOMEM);
     }
 
     while (1)
     {
-        got_frame = audio_decode_frame(is->acodec_ctx, &is->audio_pkt_queue, p_frame);
+        got_frame = audio_decode_frame(is->acodec_ctx, &is->audio_pkt_queue, frame);
         if (got_frame < 0)
         {
             goto the_end;
@@ -108,71 +108,71 @@ static int audio_decode_thread(void *arg)
 
         if (got_frame)
         {
-            tb = (AVRational){1, p_frame->sample_rate};
+            tb = (AVRational){1, frame->sample_rate};
 
             if (!(af = frame_queue_peek_writable(&is->audio_frm_queue)))
                 goto the_end;
 
-            af->pts = (p_frame->pts == AV_NOPTS_VALUE) ? NAN : p_frame->pts * av_q2d(tb);
-            af->pos = p_frame->pkt_pos;
+            af->pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
+            af->pos = frame->pkt_pos;
             //-af->serial = is->auddec.pkt_serial;
             // 当前帧包含的(单个声道)采样数/采样率就是当前帧的播放时长
-            af->duration = av_q2d((AVRational){p_frame->nb_samples, p_frame->sample_rate});
+            af->duration = av_q2d((AVRational){frame->nb_samples, frame->sample_rate});
 
             // 将frame数据拷入af->frame，af->frame指向音频frame队列尾部
-            av_frame_move_ref(af->frame, p_frame);
+            av_frame_move_ref(af->frame, frame);
             // 更新音频frame队列大小及写指针
             frame_queue_push(&is->audio_frm_queue);
         }
     }
 
 the_end:
-    av_frame_free(&p_frame);
+    av_frame_free(&frame);
     return ret;
 }
 
 int open_audio_stream(PlayerState *is)
 {
-    AVCodecContext *p_codec_ctx;
+    AVCodecContext *codec_ctx;
     int ret;
 
     // 1. 为音频流构建解码器AVCodecContext
 
     // 1.1 获取解码器参数AVCodecParameters
-    AVCodecParameters *p_codec_par = is->audio_stream->codecpar;
+    AVCodecParameters *codec_par = is->audio_stream->codecpar;
     // 1.2 获取解码器
-    const AVCodec *p_codec = avcodec_find_decoder(p_codec_par->codec_id);
-    if (p_codec == NULL)
+    const AVCodec *codec = avcodec_find_decoder(codec_par->codec_id);
+    if (codec == NULL)
     {
         av_log(NULL, AV_LOG_ERROR, "Cann't find codec!\n");
         return -1;
     }
 
     // 1.3 构建解码器AVCodecContext
-    // 1.3.1 p_codec_ctx初始化：分配结构体，使用p_codec初始化相应成员为默认值
-    p_codec_ctx = avcodec_alloc_context3(p_codec);
-    if (p_codec_ctx == NULL)
+    // 1.3.1 codec_ctx初始化：分配结构体，使用codec初始化相应成员为默认值
+    codec_ctx = avcodec_alloc_context3(codec);
+    if (codec_ctx == NULL)
     {
         av_log(NULL, AV_LOG_ERROR, "avcodec_alloc_context3() failed\n");
         return -1;
     }
-    // 1.3.2 p_codec_ctx初始化：p_codec_par ==> p_codec_ctx，初始化相应成员
-    ret = avcodec_parameters_to_context(p_codec_ctx, p_codec_par);
+    // 1.3.2 codec_ctx初始化：codec_par ==> codec_ctx，初始化相应成员
+    ret = avcodec_parameters_to_context(codec_ctx, codec_par);
     if (ret < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "avcodec_parameters_to_context() failed %d\n", ret);
         return -1;
     }
-    // 1.3.3 p_codec_ctx初始化：使用p_codec初始化p_codec_ctx，初始化完成
-    ret = avcodec_open2(p_codec_ctx, p_codec, NULL);
+    // 1.3.3 codec_ctx初始化：使用codec初始化codec_ctx，初始化完成
+    ret = avcodec_open2(codec_ctx, codec, NULL);
     if (ret < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "avcodec_open2() failed %d\n", ret);
         return -1;
     }
 
-    p_codec_ctx->pkt_timebase = is->audio_stream->time_base;
-    is->acodec_ctx = p_codec_ctx;
+    codec_ctx->pkt_timebase = is->audio_stream->time_base;
+    is->acodec_ctx = codec_ctx;
 
     // 2. 创建视频解码线程
     SDL_CreateThread(audio_decode_thread, "audio decode thread", is);
