@@ -151,8 +151,8 @@ typedef struct PlayerState {
     struct SwrContext *audio_swr_ctx;
     AVFrame *frm_yuv;
 
-    AudioParam audio_param_src;
-    AudioParam audio_param_tgt;
+    AudioParam audio_src;
+    AudioParam audio_tgt;
     int audio_hw_buf_size;              // SDL音频缓冲区大小(单位字节)
     uint8_t *audio_frm;                 // 指向待播放的一帧音频数据，指向的数据区将被拷入SDL音频缓冲区。若经过重采样则指向audio_frm_rwr，否则指向frame中的音频
     uint8_t *audio_frm_rwr;             // 音频重采样的输出缓冲区

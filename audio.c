@@ -110,7 +110,7 @@ static int audio_decode_thread(void *arg)
 
             af->pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
             af->pos = frame->pkt_pos;
-            
+
             // 当前帧包含的(单个声道)采样数/采样率就是当前帧的播放时长
             af->duration = av_q2d((AVRational){frame->nb_samples, frame->sample_rate});
 
@@ -180,21 +180,22 @@ int open_audio_stream(PlayerState *is)
 static int audio_resample(PlayerState *is, int64_t audio_callback_time)
 {
     int resampled_data_size;
-    av_unused double audio_clock0;
-    int wanted_nb_samples;
-    Frame *af;
 
 #if defined(_WIN32)
     while (frame_queue_nb_remaining(&is->audio_frm_queue) == 0)
     {
-        if ((av_gettime_relative() - audio_callback_time) > 1000000LL * is->audio_hw_buf_size / is->audio_param_tgt.bytes_per_sec / 2)
+        if ((av_gettime_relative() - audio_callback_time) > 1000000LL * is->audio_hw_buf_size / is->audio_tgt.bytes_per_sec / 2)
+        {
             return -1;
+        }
+
         av_usleep(1000);
     }
 #endif
 
     // 若队列头部可读，则由af指向可读帧
-    if (!(af = frame_queue_peek_readable(&is->audio_frm_queue)))
+    Frame *af = frame_queue_peek_readable(&is->audio_frm_queue);
+    if (!af)
     {
         return -1;
     }
@@ -202,25 +203,26 @@ static int audio_resample(PlayerState *is, int64_t audio_callback_time)
     frame_queue_next(&is->audio_frm_queue);
 
     // 根据frame中指定的音频参数获取缓冲区的大小
-    int data_size = av_samples_get_buffer_size(NULL, af->frame->ch_layout.nb_channels, // 本行两参数：linesize，声道数
-                                               af->frame->nb_samples,                  // 本行一参数：本帧中包含的单个声道中的样本数
-                                               af->frame->format, 1);                  // 本行两参数：采样格式，不对齐
+    int data_size = av_samples_get_buffer_size(
+        NULL, af->frame->ch_layout.nb_channels, // 本行两参数：linesize，声道数
+        af->frame->nb_samples,                  // 本行一参数：本帧中包含的单个声道中的样本数
+        af->frame->format, 1);                  // 本行两参数：采样格式，不对齐
 
-    wanted_nb_samples = af->frame->nb_samples;
+    int wanted_nb_samples = af->frame->nb_samples;
 
-    // is->audio_param_tgt是SDL可接受的音频帧数，是audio_open()中取得的参数
-    // 在audio_open()函数中又有“is->audio_src = is->audio_param_tgt”
-    // 此处表示：如果frame中的音频参数 == is->audio_src == is->audio_param_tgt，那音频重采样的过程就免了(因此时is->swr_ctr是NULL)
-    // 　　　　　否则使用frame(源)和is->audio_param_tgt(目标)中的音频参数来设置is->swr_ctx，并使用frame中的音频参数来赋值is->audio_src
-    if (af->frame->format != is->audio_param_src.fmt ||
-        av_channel_layout_compare(&af->frame->ch_layout, &is->audio_param_src.ch_layout) ||
-        af->frame->sample_rate != is->audio_param_src.freq)
+    // is->audio_tgt 是 SDL 可接受的音频帧数, 是 audio_open() 中取得的参数
+    // 在 audio_open() 函数中又有 “is->audio_src = is->audio_tgt”
+    // 此处表示：如果 frame 中的音频参数 == is->audio_src == is->audio_tgt, 那音频重采样的过程就免了(因此时 is->swr_ctr 是 NULL)
+    // 　　　　　否则使用 frame(源) 和 is->audio_tgt(目标) 中的音频参数来设置 is->swr_ctx, 并使用 frame 中的音频参数来赋值 is->audio_src
+    if (af->frame->format != is->audio_src.fmt ||
+        av_channel_layout_compare(&af->frame->ch_layout, &is->audio_src.ch_layout) ||
+        af->frame->sample_rate != is->audio_src.freq)
     {
         swr_free(&is->audio_swr_ctx);
 
-        // 使用frame(源)和is->audio_param_tgt(目标)中的音频参数来设置is->audio_swr_ctx
+        // 使用frame(源)和is->audio_tgt(目标)中的音频参数来设置is->audio_swr_ctx
         swr_alloc_set_opts2(&is->audio_swr_ctx,
-                            &is->audio_param_tgt.ch_layout, is->audio_param_tgt.fmt, is->audio_param_tgt.freq,
+                            &is->audio_tgt.ch_layout, is->audio_tgt.fmt, is->audio_tgt.freq,
                             &af->frame->ch_layout, af->frame->format, af->frame->sample_rate,
                             0, NULL);
         if (!is->audio_swr_ctx || swr_init(is->audio_swr_ctx) < 0)
@@ -228,55 +230,76 @@ static int audio_resample(PlayerState *is, int64_t audio_callback_time)
             av_log(NULL, AV_LOG_ERROR,
                    "Cannot create sample rate converter for conversion of %d Hz %s %d channels to %d Hz %s %d channels!\n",
                    af->frame->sample_rate, av_get_sample_fmt_name(af->frame->format), af->frame->ch_layout.nb_channels,
-                   is->audio_param_tgt.freq, av_get_sample_fmt_name(is->audio_param_tgt.fmt), is->audio_param_tgt.ch_layout.nb_channels);
+                   is->audio_tgt.freq, av_get_sample_fmt_name(is->audio_tgt.fmt), is->audio_tgt.ch_layout.nb_channels);
+
             swr_free(&is->audio_swr_ctx);
+
             return -1;
         }
 
         // 使用frame中的参数更新is->audio_param_src，第一次更新后后面基本不用执行此if分支了，因为一个音频流中各frame通用参数一样
-        if (av_channel_layout_copy(&is->audio_param_src.ch_layout, &af->frame->ch_layout) < 0)
+        if (av_channel_layout_copy(&is->audio_src.ch_layout, &af->frame->ch_layout) < 0)
+        {
             return -1;
-        is->audio_param_src.freq = af->frame->sample_rate;
-        is->audio_param_src.fmt = af->frame->format;
+        }
+
+        is->audio_src.freq = af->frame->sample_rate;
+        is->audio_src.fmt = af->frame->format;
     }
 
     if (is->audio_swr_ctx)
     {
-        // 重采样输入参数1：输入音频样本数是af->frame->nb_samples
+        // 重采样输入参数1：输入音频样本数是 af->frame->nb_samples
         // 重采样输入参数2：输入音频缓冲区
         const uint8_t **in = (const uint8_t **)af->frame->extended_data;
+
         // 重采样输出参数1：输出音频缓冲区尺寸
         // 重采样输出参数2：输出音频缓冲区
         uint8_t **out = &is->audio_frm_rwr;
+
         // 重采样输出参数：输出音频样本数(多加了256个样本)
-        int out_count = (int64_t)wanted_nb_samples * is->audio_param_tgt.freq / af->frame->sample_rate + 256;
+        int out_count = (int64_t)wanted_nb_samples * is->audio_tgt.freq / af->frame->sample_rate + 256;
+
         // 重采样输出参数：输出音频缓冲区尺寸(以字节为单位)
-        int out_size = av_samples_get_buffer_size(NULL, is->audio_param_tgt.ch_layout.nb_channels, out_count, is->audio_param_tgt.fmt, 0);
-        int len2;
+        int out_size = av_samples_get_buffer_size(
+            NULL,
+            is->audio_tgt.ch_layout.nb_channels,
+            out_count,
+            is->audio_tgt.fmt,
+            0);
         if (out_size < 0)
         {
             av_log(NULL, AV_LOG_ERROR, "av_samples_get_buffer_size() failed\n");
             return -1;
         }
+
         av_fast_malloc(&is->audio_frm_rwr, &is->audio_frm_rwr_size, out_size);
         if (!is->audio_frm_rwr)
+        {
             return AVERROR(ENOMEM);
+        }
+
         // 音频重采样：返回值是重采样后得到的音频数据中单个声道的样本数
-        len2 = swr_convert(is->audio_swr_ctx, out, out_count, in, af->frame->nb_samples);
+        int len2 = swr_convert(is->audio_swr_ctx, out, out_count, in, af->frame->nb_samples);
         if (len2 < 0)
         {
             av_log(NULL, AV_LOG_ERROR, "swr_convert() failed\n");
             return -1;
         }
+
         if (len2 == out_count)
         {
             av_log(NULL, AV_LOG_WARNING, "audio buffer is probably too small\n");
             if (swr_init(is->audio_swr_ctx) < 0)
+            {
                 swr_free(&is->audio_swr_ctx);
+            }
         }
+
         is->audio_frm = is->audio_frm_rwr;
+
         // 重采样返回的一帧音频数据大小(以字节为单位)
-        resampled_data_size = len2 * is->audio_param_tgt.ch_layout.nb_channels * av_get_bytes_per_sample(is->audio_param_tgt.fmt);
+        resampled_data_size = len2 * is->audio_tgt.ch_layout.nb_channels * av_get_bytes_per_sample(is->audio_tgt.fmt);
     }
     else
     {
@@ -285,7 +308,6 @@ static int audio_resample(PlayerState *is, int64_t audio_callback_time)
         resampled_data_size = data_size;
     }
 
-    audio_clock0 = is->audio_clock;
     /* update the audio clock with the pts */
     if (!isnan(af->pts))
     {
@@ -295,16 +317,9 @@ static int audio_resample(PlayerState *is, int64_t audio_callback_time)
     {
         is->audio_clock = NAN;
     }
+
     is->audio_clock_serial = af->serial;
-#ifdef DEBUG
-    {
-        static double last_clock;
-        printf("audio: delay=%0.3f clock=%0.3f clock0=%0.3f\n",
-               is->audio_clock - last_clock,
-               is->audio_clock, audio_clock0);
-        last_clock = is->audio_clock;
-    }
-#endif
+
     return resampled_data_size;
 }
 
@@ -340,20 +355,20 @@ static int open_audio_playing(void *arg)
     // 音频帧解码后得到的frame中的音频格式未必被SDL支持，比如frame可能是planar格式，但SDL2.0并不支持planar格式，
     // 若将解码后的frame直接送入SDL音频缓冲区，声音将无法正常播放。所以需要先将frame重采样(转换格式)为SDL支持的模式，
     // 然后送再写入SDL音频缓冲区
-    is->audio_param_tgt.fmt = AV_SAMPLE_FMT_S16;
-    is->audio_param_tgt.freq = actual_spec.freq;
-    av_channel_layout_default(&is->audio_param_tgt.ch_layout, actual_spec.channels);
-    
-    is->audio_param_tgt.frame_size = av_samples_get_buffer_size(NULL, actual_spec.channels, 1, is->audio_param_tgt.fmt, 1);
-    is->audio_param_tgt.bytes_per_sec = av_samples_get_buffer_size(NULL, actual_spec.channels, actual_spec.freq, is->audio_param_tgt.fmt, 1);
-    
-    if (is->audio_param_tgt.bytes_per_sec <= 0 || is->audio_param_tgt.frame_size <= 0)
+    is->audio_tgt.fmt = AV_SAMPLE_FMT_S16;
+    is->audio_tgt.freq = actual_spec.freq;
+    av_channel_layout_default(&is->audio_tgt.ch_layout, actual_spec.channels);
+
+    is->audio_tgt.frame_size = av_samples_get_buffer_size(NULL, actual_spec.channels, 1, is->audio_tgt.fmt, 1);
+    is->audio_tgt.bytes_per_sec = av_samples_get_buffer_size(NULL, actual_spec.channels, actual_spec.freq, is->audio_tgt.fmt, 1);
+
+    if (is->audio_tgt.bytes_per_sec <= 0 || is->audio_tgt.frame_size <= 0)
     {
         av_log(NULL, AV_LOG_ERROR, "av_samples_get_buffer_size failed\n");
         return -1;
     }
 
-    is->audio_param_src = is->audio_param_tgt;
+    is->audio_src = is->audio_tgt;
     is->audio_hw_buf_size = actual_spec.size; // SDL音频缓冲区大小
     is->audio_frm_size = 0;
     is->audio_cp_index = 0;
@@ -391,7 +406,7 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
             {
                 /* if error, just output silence */
                 is->audio_frm = NULL;
-                is->audio_frm_size = SDL_AUDIO_MIN_BUFFER_SIZE / is->audio_param_tgt.frame_size * is->audio_param_tgt.frame_size;
+                is->audio_frm_size = SDL_AUDIO_MIN_BUFFER_SIZE / is->audio_tgt.frame_size * is->audio_tgt.frame_size;
             }
             else
             {
@@ -420,8 +435,10 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
         stream += len1;
         is->audio_cp_index += len1;
     }
+
     // is->audio_write_buf_size是本帧中尚未拷入SDL音频缓冲区的数据量
     is->audio_write_buf_size = is->audio_frm_size - is->audio_cp_index;
+
     /* Let's assume the audio driver that is used by SDL has two periods. */
     // 3. 更新时钟
     if (!isnan(is->audio_clock))
@@ -429,7 +446,7 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
         // 更新音频时钟，更新时刻：每次往声卡缓冲区拷入数据后
         // 前面audio_decode_frame中更新的is->audio_clock是以音频帧为单位，所以此处第二个参数要减去未拷贝数据量占用的时间
         set_clock_at(&is->audio_clk,
-                     is->audio_clock - (double)(2 * is->audio_hw_buf_size + is->audio_write_buf_size) / is->audio_param_tgt.bytes_per_sec,
+                     is->audio_clock - (double)(2 * is->audio_hw_buf_size + is->audio_write_buf_size) / is->audio_tgt.bytes_per_sec,
                      is->audio_clock_serial,
                      audio_callback_time / 1000000.0);
     }
